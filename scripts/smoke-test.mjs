@@ -405,6 +405,7 @@ try {
   assert.equal(openCodeConfig.theme, "system");
   assert.deepEqual(openCodeConfig.mcp.argos.command, ["argos-mcp"]);
   assert(fs.existsSync(path.join(target, ".opencode", "skills", "argos", "references", "commands.md")));
+  assert(fs.existsSync(path.join(target, ".opencode", "skills", "argos-finding-report", "references", "report-template.md")));
   const openCodeDoctor = run("opencode", "doctor", "--root", target);
   assert.equal(openCodeDoctor.ok, true, JSON.stringify(openCodeDoctor));
 

@@ -32,6 +32,7 @@ for (const relative of [
   "plugins/argos/.mcp.json",
   "plugins/argos/scripts/argos-mcp.cjs",
   "plugins/argos/commands/argos.md",
+  "plugins/argos/skills/finding-report/references/report-template.md",
   "README.md",
   "docs/ARCHITECTURE.md",
   "docs/INSTALLATION.md",

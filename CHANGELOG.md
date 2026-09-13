@@ -17,6 +17,7 @@ All notable changes to Argos are documented here.
 - Refutation checks focus on later technical or premise changes instead of the order used to attach test metadata.
 - Research skills now keep test and conclusion scope exact and revisit prior conclusions through explicit graph links.
 - Canonical identity guidance now keeps the visible map current: changed knowledge updates the same node, while internal revisions retain prior text.
+- The finding-report skill now includes a concise default vulnerability report template while preserving user and program templates as the primary format.
 
 ### Removed
 
