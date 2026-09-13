@@ -12,7 +12,7 @@ const locked_sqlite_1 = require("./locked-sqlite");
 const RETIRED_GENERATED_FILES = new Set(["Argos Knowledge Graph.canvas"]);
 const LEGACY_EXPORT_FILES = ["Argos Knowledge Graph.canvas", "Argos Knowledge Graph.md"];
 function exportObsidian(db, outputInput, prune = false) {
-    const output = node_path_1.default.resolve(outputInput ?? (0, paths_1.defaultVaultPath)(db.root));
+    const output = node_path_1.default.resolve(outputInput ?? (0, paths_1.defaultVaultPath)(db.root, db.config.name));
     (0, paths_1.ensureDir)(output);
     return (0, locked_sqlite_1.withArgosFileLock)(`${output}.argos-export-lock`, () => exportObsidianLocked(db, output, prune));
 }

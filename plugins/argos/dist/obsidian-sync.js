@@ -15,6 +15,7 @@ const db_1 = require("./db");
 const locked_sqlite_1 = require("./locked-sqlite");
 const obsidian_1 = require("./obsidian");
 const paths_1 = require("./paths");
+const vocabulary_1 = require("./vocabulary");
 const DEFAULT_INTERVAL_SECONDS = 30;
 function ensureObsidianSync(rootInput) {
     const root = node_path_1.default.resolve(rootInput);
@@ -125,7 +126,7 @@ function completeClaimedExport(root, claim) {
     });
 }
 function readStoredState(root) {
-    const fallback = defaultState();
+    const fallback = defaultState(root);
     try {
         const parsed = JSON.parse(node_fs_1.default.readFileSync((0, paths_1.obsidianSyncStatePath)(root), "utf8"));
         if (parsed.formatVersion !== 1)
@@ -147,11 +148,11 @@ function readStoredState(root) {
         return fallback;
     }
 }
-function defaultState() {
+function defaultState(root) {
     return {
         formatVersion: 1,
         enabled: true,
-        output: ".argos/obsidian",
+        output: defaultOutputForStorage(root),
         intervalSeconds: boundedInterval(Number(process.env.ARGOS_OBSIDIAN_SYNC_INTERVAL_SECONDS ?? DEFAULT_INTERVAL_SECONDS)),
         prune: true,
         attemptToken: null,
@@ -198,11 +199,15 @@ function transientErrorStatus(root, error) {
 }
 function normalizeStoredOutput(root, value, formerRoot) {
     if (typeof value !== "string" || !value.trim())
-        return defaultState().output;
+        return defaultOutputForStorage(root);
     if (!node_path_1.default.isAbsolute(value))
         return toPortablePath(portableRelativePath(value));
     const base = typeof formerRoot === "string" && formerRoot.trim() ? node_path_1.default.resolve(formerRoot) : root;
     return isInside(base, value) ? toPortablePath(node_path_1.default.relative(base, node_path_1.default.resolve(value)) || ".") : node_path_1.default.resolve(value);
+}
+function defaultOutputForStorage(root) {
+    const name = (0, vocabulary_1.readConfig)(root).name;
+    return toPortablePath(node_path_1.default.relative(root, (0, paths_1.defaultVaultPath)(root, name)));
 }
 function outputForStorage(root, value) {
     const resolved = node_path_1.default.resolve(root, value);

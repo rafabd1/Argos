@@ -2,6 +2,14 @@
 
 All notable changes to Argos are documented here.
 
+## [0.1.3] - 2026-09-13
+
+### Changed
+
+- Default Obsidian vaults now use `.argos/obsidian/<config-name>` so each workspace projection has the target's configured name.
+- The vault folder segment is sanitized for portable filesystem use without changing the target name stored by Argos.
+- Existing sync destinations remain unchanged when the named default is introduced.
+
 ## [0.1.2] - 2026-09-13
 
 ### Added

@@ -8,6 +8,7 @@ exports.argosDir = argosDir;
 exports.knowledgePath = knowledgePath;
 exports.configPath = configPath;
 exports.defaultVaultPath = defaultVaultPath;
+exports.safeVaultName = safeVaultName;
 exports.obsidianSyncStatePath = obsidianSyncStatePath;
 exports.ensureDir = ensureDir;
 exports.writeFileAtomic = writeFileAtomic;
@@ -25,8 +26,19 @@ function knowledgePath(root) {
 function configPath(root) {
     return node_path_1.default.join(argosDir(root), "config.json");
 }
-function defaultVaultPath(root) {
-    return node_path_1.default.join(argosDir(root), "obsidian");
+function defaultVaultPath(root, targetName) {
+    return node_path_1.default.join(argosDir(root), "obsidian", safeVaultName(targetName));
+}
+function safeVaultName(value) {
+    const cleaned = value
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/[. ]+$/g, "")
+        .slice(0, 80)
+        .replace(/[. ]+$/g, "");
+    const name = cleaned || "Argos target";
+    return /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(name) ? `_${name}` : name;
 }
 function obsidianSyncStatePath(root) {
     return node_path_1.default.join(argosDir(root), "obsidian-sync.json");

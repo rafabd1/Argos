@@ -483,6 +483,7 @@ Usage:
 changes require explicit node and relation operations; Argos never infers them
 from prose. Obsidian sync checks for pending graph changes after normal workspace
 operations and can be disabled persistently with argos obsidian sync disable.
+Fresh targets use <root>/.argos/obsidian/<config-name> as the default vault.
 `);
 }
 main().catch((error) => {

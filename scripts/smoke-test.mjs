@@ -21,9 +21,17 @@ const env = {
 
 try {
   const version = run("--version");
-  assert.equal(version.version, "0.1.2");
+  assert.equal(version.version, "0.1.3");
   const initialized = run("init", "--root", target, "--name", "Smoke Target");
   assert.equal(initialized.initialized, true);
+  const namedDefaultExport = run("export", "obsidian", "--root", target);
+  assert.equal(namedDefaultExport.output, path.join(target, ".argos", "obsidian", "Smoke Target"));
+  assert(fs.existsSync(namedDefaultExport.indexPath));
+  const sanitizedNameTarget = path.join(temp, "sanitized-name-target");
+  fs.mkdirSync(sanitizedNameTarget, { recursive: true });
+  run("init", "--root", sanitizedNameTarget, "--name", "Review / Target: 2026.");
+  const sanitizedDefaultExport = run("export", "obsidian", "--root", sanitizedNameTarget);
+  assert.equal(sanitizedDefaultExport.output, path.join(sanitizedNameTarget, ".argos", "obsidian", "Review Target 2026"));
   const legacyConfigPath = path.join(target, ".argos", "config.json");
   const legacyConfig = JSON.parse(fs.readFileSync(legacyConfigPath, "utf8"));
   legacyConfig.nodeTypes = legacyConfig.nodeTypes.filter((type) => type !== "guarantee");
@@ -411,7 +419,7 @@ try {
   assert(fs.existsSync(firstSync.lastResult.explorerPath));
   assert.equal(fs.existsSync(path.join(firstSync.output, "Argos Knowledge Graph.canvas")), false);
   const storedSync = JSON.parse(fs.readFileSync(path.join(syncTarget, ".argos", "obsidian-sync.json"), "utf8"));
-  assert.equal(storedSync.output, ".argos/obsidian");
+  assert.equal(storedSync.output, ".argos/obsidian/Automatic sync target");
   assert.equal("root" in storedSync, false);
   assert.equal("pid" in storedSync, false);
   const manualVault = path.join(syncTarget, "manual-vault");
@@ -430,10 +438,10 @@ try {
   await renameWithRetry(syncTarget, relocatedSyncTarget);
   const relocatedStatus = runWithEnv(syncEnv, "status", "--root", relocatedSyncTarget);
   assert.equal(relocatedStatus.obsidianSync.root, path.resolve(relocatedSyncTarget));
-  assert.equal(relocatedStatus.obsidianSync.output, path.join(path.resolve(relocatedSyncTarget), ".argos", "obsidian"));
+  assert.equal(relocatedStatus.obsidianSync.output, path.join(path.resolve(relocatedSyncTarget), ".argos", "obsidian", "Automatic sync target"));
   const relocatedSync = await waitForObsidianSync(relocatedSyncTarget, syncEnv, (status) => status.lastResult?.nodeCount === 1 && !status.due);
   assert(fs.readdirSync(path.join(relocatedSync.output, "Component")).some((name) => name.startsWith(syncedNode.publicId)));
-  assert.equal(relocatedSync.lastResult.output, path.join(path.resolve(relocatedSyncTarget), ".argos", "obsidian"));
+  assert.equal(relocatedSync.lastResult.output, path.join(path.resolve(relocatedSyncTarget), ".argos", "obsidian", "Automatic sync target"));
   assert.equal(fs.existsSync(syncTarget), false);
   const stoppedSync = runWithEnv(syncEnv, "obsidian", "sync", "disable", "--root", relocatedSyncTarget);
   assert.equal(stoppedSync.enabled, false);
@@ -445,6 +453,30 @@ try {
   assert.equal(restartedSync.lastResult?.nodeCount, 1);
   assert.equal(runWithEnv(syncEnv, "obsidian", "sync", "refresh", "--root", relocatedSyncTarget).lastResult?.nodeCount, 1);
   assert.equal(runWithEnv(syncEnv, "obsidian", "sync", "disable", "--root", relocatedSyncTarget).enabled, false);
+
+  const customVault = path.join(relocatedSyncTarget, "custom-vault");
+  const customSync = runWithEnv(syncEnv, "obsidian", "sync", "enable", "--root", relocatedSyncTarget, "--out", customVault);
+  assert.equal(customSync.output, customVault);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(relocatedSyncTarget, ".argos", "obsidian-sync.json"), "utf8")).output, "custom-vault");
+
+  const legacySyncTarget = path.join(temp, "legacy-sync-target");
+  fs.mkdirSync(legacySyncTarget, { recursive: true });
+  run("init", "--root", legacySyncTarget, "--name", "Legacy sync target");
+  fs.writeFileSync(path.join(legacySyncTarget, ".argos", "obsidian-sync.json"), `${JSON.stringify({
+    formatVersion: 1,
+    enabled: true,
+    output: ".argos/obsidian",
+    intervalSeconds: 1,
+    prune: true,
+    attemptToken: null,
+    lastAttemptAt: null,
+    lastExportAt: null,
+    lastResult: null,
+    lastError: null
+  }, null, 2)}\n`);
+  const preservedLegacySync = runWithEnv(syncEnv, "obsidian", "sync", "refresh", "--root", legacySyncTarget);
+  assert.equal(preservedLegacySync.output, path.join(legacySyncTarget, ".argos", "obsidian"));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(legacySyncTarget, ".argos", "obsidian-sync.json"), "utf8")).output, ".argos/obsidian");
 
   fs.writeFileSync(path.join(target, "opencode.json"), `${JSON.stringify({ theme: "system" }, null, 2)}\n`);
   const openCodeInstall = run("opencode", "install", "--root", target);

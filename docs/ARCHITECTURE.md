@@ -176,6 +176,11 @@ The export itself uses the same database snapshot and vault lock as a manual
 export. `.argos/obsidian-sync.json` stores the relative or external destination,
 interval, last attempt, last export, result, and error.
 
+The default destination is `.argos/obsidian/<config-name>`. Argos sanitizes only
+the directory segment and keeps the original target name in the knowledge
+configuration and index. Existing destinations, including the pre-0.1.3
+default, remain unchanged until the user selects a new path.
+
 No process stays open between calls. Internal vault paths are stored relative
 to the current tool root, so they follow a moved or copied workspace. An
 external custom vault path remains absolute. No database migration is needed.
