@@ -147,17 +147,26 @@ process for that database.
 
 ## Obsidian Projection
 
-The Obsidian exporter writes one Markdown file per canonical node. Minimal
-frontmatter contains the stable Argos ID, type, aliases, and timestamps. A
-generated relation section uses wikilinks. The export also creates an index and
-an Obsidian Canvas.
+The Obsidian exporter writes one Markdown file per canonical node. Frontmatter
+contains the stable Argos ID, type, aliases, timestamps, age, revalidation
+signal, relation counts, and relation types. Each directed relation creates one
+wikilink from its source note. Incoming context remains visible as plain text,
+so the global graph does not receive a reverse copy of the same edge.
+
+`Argos Index.md` summarizes node types, relation types, stale knowledge, and
+isolated notes without linking every note into an artificial hub. It embeds
+`Argos Explorer.base`, which provides filtered Obsidian Bases views for all
+knowledge, findings, hypotheses, tests, stale notes, and isolated notes. The
+export does not write `.obsidian` preferences.
 
 SQLite remains canonical. A manifest tracks generated files and their hashes
 across renames. `--prune` removes only unchanged stale files listed in that
 manifest and contained inside the chosen vault. It preserves a stale projection
 that was edited after export and reports the count. Files inherited from a
 legacy manifest without hashes are also preserved because their state cannot be
-verified.
+verified. A retired generated Canvas is removed when its recorded hash still
+matches, even when a manual export omits `--prune`. Modified or unmanaged legacy
+files are preserved and returned in `legacyFilesPreserved`.
 
 After each successful Argos operation, an on-use synchronizer checks the last
 export time. It refreshes the projection when the 30-second default interval has
