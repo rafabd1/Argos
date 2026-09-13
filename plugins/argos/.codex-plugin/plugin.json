@@ -13,8 +13,7 @@
     "security-research",
     "knowledge-graph",
     "vulnerability-research",
-    "obsidian",
-    "multi-agent"
+    "obsidian"
   ],
   "skills": "./skills/",
   "mcpServers": {
@@ -25,7 +24,7 @@
   "interface": {
     "displayName": "Argos",
     "shortDescription": "Build and query a connected security knowledge map.",
-    "longDescription": "Argos keeps one canonical Markdown note per target item, links components, sinks, flows, authority, state, tests, and conclusions, retrieves bounded subgraphs, suggests missing relations for review, exports to Obsidian, and can coordinate independent Chimera co-agents through OpenCode.",
+    "longDescription": "Argos keeps one canonical Markdown note per target item, links components, sinks, flows, authority, state, tests, and conclusions, retrieves bounded subgraphs, suggests missing relations for review, and exports the map to Obsidian.",
     "developerName": "Vyntra Research",
     "category": "Developer Tools",
     "capabilities": ["Interactive", "Write", "Run"],

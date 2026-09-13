@@ -6,7 +6,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const node_process_1 = __importDefault(require("node:process"));
 const db_1 = require("./db");
-const chimera_1 = require("./chimera");
 const obsidian_1 = require("./obsidian");
 const obsidian_sync_1 = require("./obsidian-sync");
 const opencode_1 = require("./opencode");
@@ -57,14 +56,14 @@ const tools = [
     {
         name: "argos_create_node",
         title: "Create Canonical Node",
-        description: "Create one canonical note for a new item. Content is free-form Markdown. Exact identities resolve to the existing node; strong ambiguous matches require explicit distinctFrom acknowledgement.",
+        description: "Create one canonical note for an independently existing current item. Update an existing node when knowledge, version, payload, or proof changes; internal revisions preserve history. Exact identities resolve to the existing node, and strong ambiguous matches require explicit distinctFrom acknowledgement.",
         inputSchema: schema({
             root: rootProperty,
             type: stringProp("Node type."),
-            title: stringProp("Canonical item title."),
+            title: stringProp("Current canonical item title."),
             content: optionalStringProp("Free-form Markdown knowledge."),
             aliases: stringArrayProp("Alternate names, code symbols, or paths."),
-            distinctFrom: stringArrayProp("Candidate node IDs already checked and confirmed to represent different items.")
+            distinctFrom: stringArrayProp("Candidate node IDs checked and confirmed to represent independently existing current items.")
         }, ["root", "type", "title"]),
         handler: ({ root, type, title, content, aliases, distinctFrom }) => withDb(rootValue(root), (db) => db.createNode({
             type: stringValue(type),
@@ -77,7 +76,7 @@ const tools = [
     {
         name: "argos_update_node",
         title: "Update Canonical Node",
-        description: "Update or append to the canonical Markdown note. Argos preserves changed content in internal history and refreshes updatedAt only when the note changes.",
+        description: "Bring the canonical Markdown note up to date. Use this when the same item's interpretation, version, payload, or proof changes. Argos preserves prior content in internal history and refreshes updatedAt only when the note changes.",
         inputSchema: schema({
             root: rootProperty,
             id: stringProp("Canonical node ID."),
@@ -312,206 +311,6 @@ const tools = [
         description: "Check the OpenCode CLI and project-local Argos MCP, instruction, command, and skill setup.",
         inputSchema: schema({ root: rootProperty }, ["root"]),
         handler: ({ root }) => (0, opencode_1.doctorOpenCodeSupport)(rootValue(root))
-    },
-    {
-        name: "argos_chimera_config",
-        title: "Configure Chimera",
-        description: "Read or update the user-wide OpenCode defaults used by every Argos workspace. Individual sessions inherit these values.",
-        inputSchema: schema({
-            action: enumProp(["show", "set"], "Read or update the global configuration."),
-            enabled: booleanProp("Enable Chimera."),
-            opencodeCommand: optionalStringProp("OpenCode executable or command."),
-            model: optionalStringProp("Default provider/model identifier."),
-            variant: optionalStringProp("Default model variant."),
-            maxAgents: integerProp("Maximum active co-agents.", 1, 32),
-            network: booleanProp("Allow OpenCode web tools by default."),
-            autoApprove: booleanProp("Auto-approve operations not explicitly denied by the generated agent policy.")
-        }, ["action"]),
-        handler: ({ action, enabled, opencodeCommand, model, variant, maxAgents, network, autoApprove }) => enumValue(action, ["show", "set"]) === "show"
-            ? (0, chimera_1.readChimeraConfig)()
-            : (0, chimera_1.configureChimera)({
-                enabled: optionalBoolean(enabled),
-                opencodeCommand: maybeString(opencodeCommand),
-                defaultModel: maybeString(model),
-                defaultVariant: maybeString(variant),
-                maxAgents: optionalNumber(maxAgents),
-                defaultNetwork: optionalBoolean(network),
-                autoApprove: optionalBoolean(autoApprove)
-            })
-    },
-    {
-        name: "argos_chimera_doctor",
-        title: "Check Chimera Runtime",
-        description: "Check Argos initialization, global Chimera settings, OpenCode, skills, and the configured server.",
-        inputSchema: schema({ root: rootProperty }, ["root"]),
-        handler: ({ root }) => (0, chimera_1.doctorChimera)(rootValue(root))
-    },
-    {
-        name: "argos_chimera_start",
-        title: "Start Chimera Co-agent",
-        description: "Create and immediately start an independent OpenCode co-agent with a goal and bounded Argos graph context.",
-        inputSchema: schema({
-            root: rootProperty,
-            goal: stringProp("Complete co-agent goal and stop condition."),
-            role: optionalStringProp("generalist or an installed specialist skill name."),
-            nodeIds: stringArrayProp("Canonical Argos nodes that anchor the co-agent context."),
-            accessMode: enumProp(["explorer", "editor"], "Workspace access mode."),
-            accessNotes: optionalStringProp("Exact path and shell restrictions. Required for editor mode."),
-            model: optionalStringProp("Optional session provider/model override."),
-            variant: optionalStringProp("Optional session model variant override."),
-            network: booleanProp("Optional per-session web tool override."),
-            autoApprove: booleanProp("Optional per-session OpenCode autoapproval override. Explicit deny rules still apply.")
-        }, ["root", "goal"]),
-        handler: ({ root, goal, role, nodeIds, accessMode, accessNotes, model, variant, network, autoApprove }) => (0, chimera_1.startChimera)(rootValue(root), {
-            goal: stringValue(goal),
-            role: maybeString(role),
-            nodeIds: stringArray(nodeIds),
-            accessMode: accessMode === undefined ? undefined : enumValue(accessMode, ["explorer", "editor"]),
-            accessNotes: maybeString(accessNotes),
-            model: maybeString(model),
-            variant: maybeString(variant),
-            networkAllowed: optionalBoolean(network),
-            autoApprove: optionalBoolean(autoApprove)
-        })
-    },
-    {
-        name: "argos_chimera_run",
-        title: "Recover Chimera Execution",
-        description: "Explicitly restart a stopped Chimera worker while reusing its goal, lab, graph dossier, and OpenCode session. Do not use for active sessions; normal messages use send.",
-        inputSchema: schema({ root: rootProperty, id: stringProp("Chimera session ID."), instruction: optionalStringProp("Optional recovery instruction.") }, ["root", "id"]),
-        handler: ({ root, id, instruction }) => (0, chimera_1.runChimera)(rootValue(root), stringValue(id), maybeString(instruction))
-    },
-    {
-        name: "argos_chimera_list",
-        title: "List Chimera Sessions",
-        description: "List Chimera sessions after reconciling worker and OpenCode runtime state.",
-        inputSchema: schema({ root: rootProperty, active: booleanProp("Return only starting or running sessions."), limit: integerProp("Maximum sessions.", 1, 500) }, ["root"]),
-        handler: ({ root, active, limit }) => (0, chimera_1.listChimera)(rootValue(root), { active: optionalBoolean(active), limit: optionalNumber(limit) })
-    },
-    {
-        name: "argos_chimera_send",
-        title: "Send Chimera Message",
-        description: "Send one message from either coordinator or co-agent. Session identity is inferred for co-agents. Priority directly wakes or steers only a Chimera recipient.",
-        inputSchema: schema({
-            root: rootProperty,
-            to: stringProp("coordinator or a CH session ID."),
-            body: stringProp("Message body."),
-            from: optionalStringProp("Optional explicit source. Normally inferred."),
-            priority: booleanProp("Deliver directly through OpenCode when the recipient is a co-agent."),
-            kind: enumProp(["message", "snapshot", "council", "system"], "Message purpose.")
-        }, ["root", "to", "body"]),
-        handler: ({ root, to, body, from, priority, kind }) => (0, chimera_1.sendChimera)(rootValue(root), {
-            to: stringValue(to),
-            body: stringValue(body),
-            from: maybeString(from),
-            priority: optionalBoolean(priority),
-            kind: kind === undefined ? undefined : enumValue(kind, ["message", "snapshot", "council", "system"])
-        })
-    },
-    {
-        name: "argos_chimera_broadcast",
-        title: "Broadcast Chimera Message",
-        description: "Send one message to all active co-agents except the sender. Stopped sessions are skipped.",
-        inputSchema: schema({ root: rootProperty, body: stringProp("Message body."), from: optionalStringProp("Optional explicit source."), priority: booleanProp("Deliver directly through OpenCode.") }, ["root", "body"]),
-        handler: ({ root, body, from, priority }) => (0, chimera_1.broadcastChimera)(rootValue(root), { body: stringValue(body), from: maybeString(from), priority: optionalBoolean(priority) })
-    },
-    {
-        name: "argos_chimera_poll",
-        title: "Poll Chimera Messages",
-        description: "Read coordinator or co-agent inbox messages and reconcile current session state. Reads unread messages by default.",
-        inputSchema: schema({
-            root: rootProperty,
-            identity: optionalStringProp("coordinator or CH session ID. Co-agents normally omit this."),
-            unread: booleanProp("Return only unread messages."),
-            peek: booleanProp("Do not mark returned messages as read."),
-            limit: integerProp("Maximum messages.", 1, 500)
-        }, ["root"]),
-        handler: ({ root, identity, unread, peek, limit }) => (0, chimera_1.pollChimera)(rootValue(root), {
-            identity: maybeString(identity),
-            unread: optionalBoolean(unread),
-            peek: optionalBoolean(peek),
-            limit: optionalNumber(limit)
-        })
-    },
-    {
-        name: "argos_chimera_kill",
-        title: "Stop Chimera Session",
-        description: "Abort OpenCode work, terminate the tracked worker tree, and leave the session resumable.",
-        inputSchema: schema({ root: rootProperty, id: stringProp("Chimera session ID."), reason: optionalStringProp("Stop reason.") }, ["root", "id"]),
-        handler: ({ root, id, reason }) => (0, chimera_1.killChimera)(rootValue(root), stringValue(id), maybeString(reason))
-    },
-    {
-        name: "argos_chimera_workflow_snapshot",
-        title: "Read Chimera Workflow Snapshot",
-        description: "Read a compact tail of user and assistant messages from the live OpenCode session. Tool calls and tool outputs are excluded.",
-        inputSchema: schema({
-            root: rootProperty,
-            id: stringProp("Chimera session ID."),
-            limit: integerProp("Maximum messages.", 1, 50),
-            maxMessageChars: integerProp("Maximum characters per message.", 80, 8000)
-        }, ["root", "id"]),
-        handler: ({ root, id, limit, maxMessageChars }) => (0, chimera_1.workflowSnapshot)(rootValue(root), stringValue(id), { limit: optionalNumber(limit), maxMessageChars: optionalNumber(maxMessageChars) })
-    },
-    {
-        name: "argos_chimera_council_invite",
-        title: "Invite Chimera Council",
-        description: "Open a bounded brainstorm council and invite named or all active co-agents. Each participant accepts at a safe pause point.",
-        inputSchema: schema({
-            root: rootProperty,
-            topic: stringProp("Question or pivot the council must resolve."),
-            participantIds: stringArrayProp("Optional ordered participant IDs. Omit for all active sessions."),
-            maxRounds: integerProp("Default round limit.", 1, 12)
-        }, ["root", "topic"]),
-        handler: ({ root, topic, participantIds, maxRounds }) => (0, chimera_1.inviteCouncil)(rootValue(root), { topic: stringValue(topic), participantIds: stringArray(participantIds), maxRounds: optionalNumber(maxRounds) })
-    },
-    {
-        name: "argos_chimera_council_accept",
-        title: "Accept Chimera Council",
-        description: "Accept a council invitation for the current co-agent at a safe pause point.",
-        inputSchema: schema({ root: rootProperty, id: stringProp("Council ID."), participantId: optionalStringProp("Explicit participant ID; normally inferred.") }, ["root", "id"]),
-        handler: ({ root, id, participantId }) => (0, chimera_1.acceptCouncil)(rootValue(root), stringValue(id), maybeString(participantId))
-    },
-    {
-        name: "argos_chimera_council_begin",
-        title: "Begin Chimera Council",
-        description: "Post the coordinator opening after all participants accepted, then cue the first participant automatically.",
-        inputSchema: schema({ root: rootProperty, id: stringProp("Council ID."), body: stringProp("Coordinator opening and decision question.") }, ["root", "id", "body"]),
-        handler: ({ root, id, body }) => (0, chimera_1.beginCouncil)(rootValue(root), stringValue(id), stringValue(body))
-    },
-    {
-        name: "argos_chimera_council_turn",
-        title: "Submit Chimera Council Turn",
-        description: "Submit the current co-agent's single ordered turn. Argos atomically cues the next participant.",
-        inputSchema: schema({ root: rootProperty, id: stringProp("Council ID."), body: stringProp("Concise observation, gap, option, and recommended move."), speakerId: optionalStringProp("Explicit speaker ID; normally inferred.") }, ["root", "id", "body"]),
-        handler: ({ root, id, body, speakerId }) => (0, chimera_1.submitCouncilTurn)(rootValue(root), stringValue(id), stringValue(body), maybeString(speakerId))
-    },
-    {
-        name: "argos_chimera_council_advance",
-        title: "Advance Chimera Council",
-        description: "Post the coordinator opening for another round and cue the first participant. Extending beyond the limit must be explicit.",
-        inputSchema: schema({ root: rootProperty, id: stringProp("Council ID."), body: stringProp("Next-round focus."), extend: booleanProp("Deliberately extend past maxRounds.") }, ["root", "id", "body"]),
-        handler: ({ root, id, body, extend }) => (0, chimera_1.advanceCouncil)(rootValue(root), stringValue(id), stringValue(body), optionalBoolean(extend) === true)
-    },
-    {
-        name: "argos_chimera_council_close",
-        title: "Close Chimera Council",
-        description: "Close the council, persist the coordinator conclusion, notify every participant, and tell them to resume or pivot.",
-        inputSchema: schema({ root: rootProperty, id: stringProp("Council ID."), body: stringProp("Final conclusion and next direction.") }, ["root", "id", "body"]),
-        handler: ({ root, id, body }) => (0, chimera_1.closeCouncil)(rootValue(root), stringValue(id), stringValue(body))
-    },
-    {
-        name: "argos_chimera_council_status",
-        title: "Read Chimera Council",
-        description: "Read one council's ordered transcript, participants, round, and current turn owner.",
-        inputSchema: schema({ root: rootProperty, id: stringProp("Council ID.") }, ["root", "id"]),
-        handler: ({ root, id }) => (0, chimera_1.councilStatus)(rootValue(root), stringValue(id))
-    },
-    {
-        name: "argos_chimera_council_list",
-        title: "List Chimera Councils",
-        description: "List recent councils without loading each transcript.",
-        inputSchema: schema({ root: rootProperty, limit: integerProp("Maximum councils.", 1, 200) }, ["root"]),
-        handler: ({ root, limit }) => (0, chimera_1.listCouncils)(rootValue(root), optionalNumber(limit))
     }
 ];
 let buffer = "";

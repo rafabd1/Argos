@@ -8,7 +8,6 @@
   <a href="#install">Install</a> &bull;
   <a href="#quick-start">Quick Start</a> &bull;
   <a href="#knowledge-model">Knowledge Model</a> &bull;
-  <a href="#chimera">Chimera</a> &bull;
   <a href="#documentation">Documentation</a>
 </p>
 
@@ -107,6 +106,11 @@ recorded under another node type. If two reviewed nodes prove to be the same
 item, an explicit merge preserves their aliases, revisions, and relations under
 one canonical ID. Suggested links stay outside the graph until accepted.
 
+The visible graph reflects current knowledge. When an item's interpretation,
+tested version, or proof changes, update its canonical note and keep the old
+scope in the related test or evidence note. Internal revisions preserve prior
+text without adding historical copies to the map.
+
 Every read includes `updatedAt` and `ageDays`. An update refreshes that age only
 when the canonical note changes. Old knowledge remains available as prior
 evidence and signals when revalidation may be useful.
@@ -133,25 +137,6 @@ separate context relations, and pending link suggestions in one response.
 
 These results guide inspection. Code and evidence decide the conclusion.
 
-## Chimera
-
-Chimera is optional. It runs independent OpenCode co-agents with a persistent
-session, a private lab, selected graph context, scoped access, direct messages,
-workflow snapshots, and ordered councils.
-
-Install and configure OpenCode through its
-[official repository](https://github.com/anomalyco/opencode), then set the
-user-wide Chimera defaults:
-
-```powershell
-argos chimera config init --opencode-command opencode --model provider/model --variant high --max-agents 5
-argos chimera doctor --root C:\path\to\target
-```
-
-Starting a co-agent launches it immediately. Existing sessions can receive
-priority messages through OpenCode; `run` is reserved for explicit recovery of
-a stopped worker. See [Chimera](docs/CHIMERA.md) for the full flow.
-
 ## Development
 
 ```powershell
@@ -160,15 +145,13 @@ npm test
 ```
 
 The test suite checks TypeScript, CLI and MCP behavior, canonical identity,
-concurrent writes, graph retrieval, Obsidian export, OpenCode project setup,
-Chimera messaging, session recovery, and a two-round council.
+concurrent writes, graph retrieval, Obsidian export, and OpenCode project setup.
 
 ## Documentation
 
 - [Installation](docs/INSTALLATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [CLI and MCP](docs/RUNTIME.md)
-- [Chimera](docs/CHIMERA.md)
 
 ## License
 

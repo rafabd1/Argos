@@ -50,6 +50,10 @@ IDs through `--distinct-from` only when the item is genuinely separate.
 replacement and an empty append are no-ops: they create no revision and do not
 refresh `updatedAt`.
 
+Use an update when the same item's current interpretation, version, payload, or
+proof changes. Historical tests keep their scope in their own note; they do not
+require a generic or former copy of the target item in the visible graph.
+
 Use `node merge` only after confirming that two nodes describe the same real
 item. The supplied Markdown becomes the reviewed canonical body. Argos keeps
 both note histories, folds source names into aliases, rewires relations and
@@ -144,16 +148,6 @@ installer always preserves unrelated fields in a valid strict-JSON
 `opencode.json`.
 
 MCP: `argos_opencode_install`, `argos_opencode_doctor`.
-
-## Chimera
-
-Chimera CLI and MCP operations are documented in [Chimera](CHIMERA.md). The
-main groups are:
-
-- configuration and doctor;
-- session start, recovery, list, stop, and snapshots;
-- direct messages, broadcast, and inbox polling;
-- ordered council invite, accept, begin, turn, advance, close, status, and list.
 
 ## Exit Behavior
 

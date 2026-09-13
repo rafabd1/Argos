@@ -9,7 +9,7 @@
     {
       "name": "argos",
       "source": "./plugins/argos",
-      "description": "Build and query a connected security knowledge map with optional Chimera co-agents.",
+      "description": "Build and query a connected security knowledge map.",
       "version": "0.1.1",
       "author": {
         "name": "Vyntra Research"

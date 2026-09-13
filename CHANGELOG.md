@@ -16,6 +16,11 @@ All notable changes to Argos are documented here.
 - Chain discovery now follows explicit edge direction and technical relations, with `depends_on` allowed only as the first step from a hypothesis.
 - Refutation checks focus on later technical or premise changes instead of the order used to attach test metadata.
 - Research skills now keep test and conclusion scope exact and revisit prior conclusions through explicit graph links.
+- Canonical identity guidance now keeps the visible map current: changed knowledge updates the same node, while internal revisions retain prior text.
+
+### Removed
+
+- Built-in co-agent orchestration, sessions, messaging, and councils. Argos now focuses on research knowledge and graph operations.
 
 ### Fixed
 

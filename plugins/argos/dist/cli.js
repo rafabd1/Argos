@@ -8,7 +8,6 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_process_1 = __importDefault(require("node:process"));
 const db_1 = require("./db");
-const chimera_1 = require("./chimera");
 const obsidian_1 = require("./obsidian");
 const obsidian_sync_1 = require("./obsidian-sync");
 const opencode_1 = require("./opencode");
@@ -159,149 +158,7 @@ async function main() {
         }
         throw new Error("Usage: argos opencode install|doctor");
     }
-    if (command === "chimera") {
-        await handleChimera(root, subcommand, rest, parsed);
-        return;
-    }
     throw new Error(`Unknown command: ${[command, subcommand].filter(Boolean).join(" ")}`);
-}
-async function handleChimera(root, subcommand, rest, parsed) {
-    if (subcommand === "config") {
-        const action = rest[0] ?? "show";
-        if (action === "show") {
-            print((0, chimera_1.readChimeraConfig)());
-            return;
-        }
-        if (action === "init" || action === "set") {
-            const current = (0, chimera_1.readChimeraConfig)();
-            print((0, chimera_1.configureChimera)({
-                enabled: parsed.options.has("enabled") ? flag(parsed, "enabled") : true,
-                opencodeCommand: option(parsed, "opencode-command") ?? current.opencodeCommand,
-                defaultModel: parsed.options.has("model") ? option(parsed, "model") ?? null : current.defaultModel,
-                defaultVariant: parsed.options.has("variant") ? option(parsed, "variant") ?? null : current.defaultVariant,
-                defaultAgent: option(parsed, "agent") ?? current.defaultAgent,
-                maxAgents: numberOption(parsed, "max-agents") ?? current.maxAgents,
-                defaultNetwork: parsed.options.has("network") ? flag(parsed, "network") : current.defaultNetwork,
-                autoApprove: parsed.options.has("auto-approve") ? flag(parsed, "auto-approve") : current.autoApprove,
-                serverUrl: current.serverUrl,
-                serverPid: current.serverPid
-            }));
-            return;
-        }
-        throw new Error("Usage: argos chimera config show|init|set");
-    }
-    if (subcommand === "doctor") {
-        print(await (0, chimera_1.doctorChimera)(root));
-        return;
-    }
-    if (subcommand === "start") {
-        const access = option(parsed, "access") ?? "explorer";
-        if (access !== "explorer" && access !== "editor")
-            throw new Error("--access must be explorer or editor");
-        print(await (0, chimera_1.startChimera)(root, {
-            role: option(parsed, "role"),
-            goal: requiredOption(parsed, "goal"),
-            nodeIds: listOption(parsed, "nodes"),
-            accessMode: access,
-            accessNotes: option(parsed, "access-notes"),
-            model: option(parsed, "model"),
-            variant: option(parsed, "variant"),
-            networkAllowed: parsed.options.has("network") ? flag(parsed, "network") : undefined,
-            autoApprove: parsed.options.has("auto-approve") ? flag(parsed, "auto-approve") : undefined
-        }));
-        return;
-    }
-    if (subcommand === "run") {
-        print(await (0, chimera_1.runChimera)(root, requiredOption(parsed, "id"), option(parsed, "message")));
-        return;
-    }
-    if (subcommand === "_worker") {
-        await (0, chimera_1.runChimeraWorker)(root, requiredOption(parsed, "id"));
-        return;
-    }
-    if (subcommand === "list") {
-        print(await (0, chimera_1.listChimera)(root, { active: flag(parsed, "active"), limit: numberOption(parsed, "limit") }));
-        return;
-    }
-    if (subcommand === "send") {
-        print(await (0, chimera_1.sendChimera)(root, {
-            to: requiredOption(parsed, "to"),
-            from: option(parsed, "from"),
-            body: requiredOption(parsed, "body"),
-            priority: flag(parsed, "priority"),
-            kind: messageKind(option(parsed, "kind"))
-        }));
-        return;
-    }
-    if (subcommand === "broadcast") {
-        print(await (0, chimera_1.broadcastChimera)(root, {
-            from: option(parsed, "from"),
-            body: requiredOption(parsed, "body"),
-            priority: flag(parsed, "priority")
-        }));
-        return;
-    }
-    if (subcommand === "poll") {
-        print(await (0, chimera_1.pollChimera)(root, {
-            identity: option(parsed, "identity"),
-            unread: !flag(parsed, "all"),
-            peek: flag(parsed, "peek"),
-            limit: numberOption(parsed, "limit")
-        }));
-        return;
-    }
-    if (subcommand === "kill") {
-        print(await (0, chimera_1.killChimera)(root, requiredOption(parsed, "id"), option(parsed, "reason")));
-        return;
-    }
-    if (subcommand === "workflow-snapshot") {
-        print(await (0, chimera_1.workflowSnapshot)(root, requiredOption(parsed, "id"), {
-            limit: numberOption(parsed, "limit"),
-            maxMessageChars: numberOption(parsed, "max-message-chars")
-        }));
-        return;
-    }
-    if (subcommand === "council") {
-        const action = rest[0];
-        if (action === "invite") {
-            print(await (0, chimera_1.inviteCouncil)(root, {
-                topic: requiredOption(parsed, "topic"),
-                participantIds: listOption(parsed, "participants"),
-                maxRounds: numberOption(parsed, "max-rounds")
-            }));
-            return;
-        }
-        if (action === "accept") {
-            print(await (0, chimera_1.acceptCouncil)(root, requiredOption(parsed, "id"), option(parsed, "participant")));
-            return;
-        }
-        if (action === "begin") {
-            print(await (0, chimera_1.beginCouncil)(root, requiredOption(parsed, "id"), requiredOption(parsed, "body")));
-            return;
-        }
-        if (action === "turn") {
-            print(await (0, chimera_1.submitCouncilTurn)(root, requiredOption(parsed, "id"), requiredOption(parsed, "body"), option(parsed, "speaker")));
-            return;
-        }
-        if (action === "advance") {
-            print(await (0, chimera_1.advanceCouncil)(root, requiredOption(parsed, "id"), requiredOption(parsed, "body"), flag(parsed, "extend")));
-            return;
-        }
-        if (action === "close") {
-            print(await (0, chimera_1.closeCouncil)(root, requiredOption(parsed, "id"), requiredOption(parsed, "body")));
-            return;
-        }
-        if (action === "status") {
-            print((0, chimera_1.councilStatus)(root, requiredOption(parsed, "id")));
-            return;
-        }
-        if (action === "list") {
-            print((0, chimera_1.listCouncils)(root, numberOption(parsed, "limit")));
-            return;
-        }
-        throw new Error("Usage: argos chimera council invite|accept|begin|turn|advance|close|status|list");
-    }
-    throw new Error("Usage: argos chimera config|doctor|start|run|list|send|broadcast|poll|kill|workflow-snapshot|council");
 }
 async function handleNode(root, subcommand, rest, parsed) {
     if (subcommand === "create") {
@@ -535,49 +392,6 @@ function allowedOptions(command, subcommand, rest) {
     }
     if (command === "opencode")
         return subcommand === "install" ? ["force"] : [];
-    if (command === "chimera") {
-        if (subcommand === "config") {
-            const action = rest[0] ?? "show";
-            return action === "show" ? [] : ["enabled", "opencode-command", "model", "variant", "agent", "max-agents", "network", "auto-approve"];
-        }
-        if (subcommand === "doctor")
-            return [];
-        if (subcommand === "start")
-            return ["role", "goal", "nodes", "access", "access-notes", "model", "variant", "network", "auto-approve"];
-        if (subcommand === "run")
-            return ["id", "message"];
-        if (subcommand === "_worker")
-            return ["id"];
-        if (subcommand === "list")
-            return ["active", "limit"];
-        if (subcommand === "send")
-            return ["to", "from", "body", "priority", "kind"];
-        if (subcommand === "broadcast")
-            return ["from", "body", "priority"];
-        if (subcommand === "poll")
-            return ["identity", "all", "peek", "limit"];
-        if (subcommand === "kill")
-            return ["id", "reason"];
-        if (subcommand === "workflow-snapshot")
-            return ["id", "limit", "max-message-chars"];
-        if (subcommand === "council") {
-            const action = rest[0];
-            if (action === "invite")
-                return ["topic", "participants", "max-rounds"];
-            if (action === "accept")
-                return ["id", "participant"];
-            if (action === "begin" || action === "close")
-                return ["id", "body"];
-            if (action === "turn")
-                return ["id", "body", "speaker"];
-            if (action === "advance")
-                return ["id", "body", "extend"];
-            if (action === "status")
-                return ["id"];
-            if (action === "list")
-                return ["limit"];
-        }
-    }
     return [];
 }
 function assertPositionals(command, subcommand, rest) {
@@ -605,12 +419,6 @@ function assertPositionals(command, subcommand, rest) {
             throw new Error(`Unexpected positional argument: ${rest[1]}`);
         return;
     }
-    if (command === "chimera") {
-        const maximum = subcommand === "config" || subcommand === "council" ? 1 : 0;
-        if (rest.length > maximum)
-            throw new Error(`Unexpected positional argument: ${rest[maximum]}`);
-        return;
-    }
     const extras = [subcommand, ...rest].filter((value) => Boolean(value));
     const consumedSubcommand = command === "vocabulary" || command === "export" || command === "opencode";
     const unconsumed = consumedSubcommand ? extras.slice(1) : extras;
@@ -629,13 +437,6 @@ function readContent(parsed) {
     if (file !== undefined)
         return node_fs_1.default.readFileSync(node_path_1.default.resolve(file), "utf8");
     return undefined;
-}
-function messageKind(value) {
-    if (value === undefined)
-        return undefined;
-    if (value === "message" || value === "snapshot" || value === "council" || value === "system")
-        return value;
-    throw new Error("--kind must be message, snapshot, council, or system");
 }
 function print(value) {
     node_process_1.default.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -678,23 +479,7 @@ Usage:
   argos opencode install [--force]
   argos opencode doctor
 
-  argos chimera config init [--opencode-command <command>] [--model <provider/model>]
-                             [--variant <name>] [--max-agents <n>] [--network]
-  argos chimera doctor
-  argos chimera start --goal <text> [--role generalist|<skill>] [--nodes <N...,...>]
-                       [--access explorer|editor] [--access-notes <rules>]
-                       [--network true|false] [--auto-approve true|false]
-  argos chimera run --id <CH...> [--message <recovery instruction>]
-  argos chimera list [--active] [--limit <n>]
-  argos chimera send --to coordinator|<CH...> --body <text> [--priority]
-  argos chimera broadcast --body <text> [--priority]
-  argos chimera poll [--identity coordinator|<CH...>] [--all] [--peek]
-  argos chimera kill --id <CH...> [--reason <text>]
-  argos chimera workflow-snapshot --id <CH...> [--limit <n>] [--max-message-chars <n>]
-  argos chimera council invite --topic <text> [--participants <CH...,...>] [--max-rounds 2]
-  argos chimera council accept|begin|turn|advance|close|status|list ...
-
-All commands accept --root. Node content is free-form Markdown. Structural
+  All commands accept --root. Node content is free-form Markdown. Structural
 changes require explicit node and relation operations; Argos never infers them
 from prose. Obsidian sync checks for pending graph changes after normal workspace
 operations and can be disabled persistently with argos obsidian sync disable.

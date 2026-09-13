@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -11,20 +10,14 @@ import { DatabaseSync } from "node:sqlite";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(repo, "dist", "cli.js");
-const mock = path.join(repo, "scripts", "mock-opencode.mjs");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "argos-smoke-"));
 const target = path.join(temp, "target");
-const argosHome = path.join(temp, "home");
-const mockState = path.join(temp, "mock-opencode-state.json");
 fs.mkdirSync(target, { recursive: true });
 const env = {
   ...process.env,
-  ARGOS_HOME: argosHome,
-  ARGOS_MOCK_STATE: mockState,
   ARGOS_DISABLE_OBSIDIAN_SYNC: "1",
   OPENCODE_COMMAND: process.execPath
 };
-let server = null;
 
 try {
   const version = run("--version");
@@ -52,6 +45,8 @@ try {
   assert(extraArgument.includes("Unexpected positional argument"));
   const invalidBoolean = runFailure("export", "obsidian", "--root", target, "--prune", "sometimes");
   assert(invalidBoolean.includes("--prune must be true or false"));
+  const removedOrchestrationCommand = runFailure("chimera");
+  assert(removedOrchestrationCommand.includes("Unknown command"));
 
   const targetNode = create("target", "Smoke Target", "Version 1.0 target.", ["smoke-app"]);
   const component = create("component", "Archive importer", "Accepts an archive and emits normalized entries.", ["ArchiveImporter", "src/importer.ts"]);
@@ -413,184 +408,8 @@ try {
   const openCodeDoctor = run("opencode", "doctor", "--root", target);
   assert.equal(openCodeDoctor.ok, true, JSON.stringify(openCodeDoctor));
 
-  const port = await freePort();
-  server = spawn(process.execPath, [mock, "serve", "--port", String(port)], { env, windowsHide: true, stdio: "ignore" });
-  await waitForHealth(port);
-  const mockCommand = `"${process.execPath}" "${mock}"`;
-  const configPath = path.join(argosHome, "chimera", "config.json");
-  const orphanedConfigLock = `${configPath}.lock`;
-  fs.mkdirSync(orphanedConfigLock, { recursive: true });
-  const oldLockTime = new Date(Date.now() - 5_000);
-  fs.utimesSync(orphanedConfigLock, oldLockTime, oldLockTime);
-  run("chimera", "config", "init", "--opencode-command", mockCommand, "--model", "mock/model", "--variant", "high", "--max-agents", "5");
-  assert.equal(fs.existsSync(orphanedConfigLock), false);
-  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  config.serverUrl = `http://127.0.0.1:${port}`;
-  config.serverPid = server.pid;
-  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-
-  const doctor = run("chimera", "doctor", "--root", target);
-  assert.equal(doctor.ok, true);
-  assert.equal(doctor.config.maxAgents, 5);
-  const unknownRole = runFailure("chimera", "start", "--root", target, "--role", "imaginary-specialist", "--goal", "This should not start.");
-  assert(unknownRole.includes("Unknown Chimera role"));
-  const firstStart = run("chimera", "start", "--root", target, "--role", "generalist", "--goal", "Map the archive-to-build relation and stop after a concise result.", "--nodes", `${component.publicId},${sinkA.publicId}`, "--access", "explorer");
-  assert.equal(firstStart.session.status, "starting");
-  assert(firstStart.launch.pid);
-  assert.equal(firstStart.session.opencodeAgent, "argos-chimera");
-  assert.equal(firstStart.session.networkAllowed, false);
-  assert.equal(firstStart.session.autoApprove, true);
-  const first = await waitForSession("CH-0001", "stopped");
-  assert(first.opencodeSessionId?.startsWith("ses_mock_"));
-  assert(fs.existsSync(path.join(first.sessionDir, ".opencode", "skills", "chimera-agent", "SKILL.md")));
-  assert(fs.existsSync(path.join(first.sessionDir, ".opencode", "skills", "chain-discovery", "SKILL.md")));
-  assert.equal(fs.existsSync(path.join(first.sessionDir, ".opencode", "skills", "argos", "SKILL.md")), false);
-  assert(fs.readFileSync(path.join(first.sessionDir, "dossier.md"), "utf8").includes("Archive file write"));
-  const explorerAgent = fs.readFileSync(path.join(first.sessionDir, ".opencode", "agents", `${first.opencodeAgent}.md`), "utf8");
-  assert(explorerAgent.includes('"*": deny'));
-  assert(explorerAgent.includes(`${first.labDir.replace(/\\/g, "/")}/**`));
-
-  const secondStart = run("chimera", "start", "--root", target, "--role", "chain-discovery", "--goal", "Inspect the linked sinks and return one bounded chain decision.", "--nodes", sinkA.publicId, "--access", "editor", "--access-notes", "Writes are allowed only inside the generated Chimera lab.", "--network", "true", "--auto-approve", "false");
-  assert.equal(secondStart.session.status, "starting");
-  assert.equal(secondStart.session.networkAllowed, true);
-  assert.equal(secondStart.session.autoApprove, false);
-  const second = await waitForSession("CH-0002", "stopped");
-  assert(second.opencodeSessionId);
-  assert(fs.existsSync(path.join(second.sessionDir, ".opencode", "skills", "evidence-testing", "SKILL.md")));
-  assert.equal(fs.existsSync(path.join(second.sessionDir, ".opencode", "skills", "argos", "SKILL.md")), false);
-
-  const queuedBodies = Array.from({ length: 8 }, (_, index) => `Concurrent inbox message ${index + 1}`);
-  const queuedWrites = await Promise.all(queuedBodies.map((body) => runAsync("chimera", "send", "--root", target, "--to", "CH-0002", "--body", body)));
-  assert.equal(new Set(queuedWrites.map((entry) => entry.message.publicId)).size, queuedBodies.length);
-  const parallelPolls = await Promise.all(Array.from({ length: 2 }, () => runAsyncWithEnv(env, "chimera", "poll", "--root", target, "--identity", "CH-0002", "--limit", "50")));
-  const polledBodies = parallelPolls.flatMap((entry) => entry.messages).filter((message) => message.body.startsWith("Concurrent inbox message"));
-  assert.equal(polledBodies.length, queuedBodies.length);
-  assert.equal(new Set(polledBodies.map((message) => message.publicId)).size, queuedBodies.length);
-
-  config.defaultAgent = "changed-global-agent";
-  config.defaultNetwork = true;
-  config.autoApprove = false;
-  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-  const direct = run("chimera", "send", "--root", target, "--to", "CH-0001", "--body", "Check the alternate producer before closing.", "--priority");
-  assert.equal(direct.delivery.accepted, true);
-  assert.equal(direct.delivery.mode, "prompt_async");
-  const directState = JSON.parse(fs.readFileSync(mockState, "utf8"));
-  assert.equal(directState.sessions[first.opencodeSessionId].lastPrompt.agent, first.opencodeAgent);
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  const snapshot = run("chimera", "workflow-snapshot", "--root", target, "--id", "CH-0001", "--limit", "4", "--max-message-chars", "220");
-  assert(snapshot.messages.length > 0 && snapshot.messages.length <= 4);
-  assert(snapshot.messages.every((message) => !message.text.includes("excluded tool output")));
-  assert(snapshot.messages.every((message) => message.text.length <= 220));
-
-  const agentPost = runWithEnv({ ...env, ARGOS_CHIMERA_ID: "CH-0001" }, "chimera", "send", "--root", target, "--to", "coordinator", "--body", "I checked the alternate producer; the scope remains open.", "--priority");
-  assert.equal(agentPost.message.fromId, "CH-0001");
-  assert.equal(agentPost.message.priority, false);
-  const coordinatorPoll = run("chimera", "poll", "--root", target, "--identity", "coordinator");
-  assert(coordinatorPoll.messages.some((message) => message.fromId === "CH-0001"));
-
-  const { ChimeraStore } = await import(pathToFileUrl(path.join(repo, "dist", "chimera-store.js")));
-  const legacyChimeraTarget = path.join(temp, "legacy-chimera-target");
-  const legacyChimeraDir = path.join(legacyChimeraTarget, ".argos", "chimera");
-  fs.mkdirSync(legacyChimeraDir, { recursive: true });
-  const legacyChimeraDb = new DatabaseSync(path.join(legacyChimeraDir, "runtime.sqlite"));
-  legacyChimeraDb.exec(`
-    CREATE TABLE chimera_sessions (
-      id INTEGER PRIMARY KEY,
-      public_id TEXT NOT NULL UNIQUE,
-      role TEXT NOT NULL,
-      goal TEXT NOT NULL,
-      node_ids_json TEXT NOT NULL DEFAULT '[]',
-      status TEXT NOT NULL,
-      access_mode TEXT NOT NULL,
-      access_notes TEXT NOT NULL DEFAULT '',
-      model TEXT,
-      variant TEXT,
-      session_dir TEXT NOT NULL,
-      lab_dir TEXT NOT NULL,
-      opencode_command TEXT NOT NULL,
-      opencode_server_url TEXT,
-      opencode_session_id TEXT,
-      run_pid INTEGER,
-      last_error TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      stopped_at TEXT
-    );
-    INSERT INTO chimera_sessions (
-      id, public_id, role, goal, status, access_mode, session_dir, lab_dir,
-      opencode_command, created_at, updated_at
-    ) VALUES (
-      1, 'CH-0001', 'generalist', 'legacy goal', 'stopped', 'explorer',
-      'legacy-session', 'legacy-lab', 'opencode',
-      '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
-    );
-  `);
-  legacyChimeraDb.close();
-  const migratedStore = new ChimeraStore(legacyChimeraTarget);
-  const migratedSession = migratedStore.getSession("CH-0001");
-  assert.equal(migratedSession.opencodeAgent, "argos-chimera");
-  assert.equal(migratedSession.networkAllowed, false);
-  assert.equal(migratedSession.autoApprove, true);
-  migratedStore.close();
-  const store = new ChimeraStore(target);
-  store.updateSession("CH-0001", { status: "stopped", runPid: null, stopped: true });
-  const notResurrected = store.registerWorkerPid("CH-0001", process.pid);
-  assert.equal(notResurrected.status, "stopped");
-  assert.equal(notResurrected.runPid, null);
-  store.updateSession("CH-0001", { status: "running" });
-  store.updateSession("CH-0002", { status: "running" });
-  store.close();
-  const councilMockState = JSON.parse(fs.readFileSync(mockState, "utf8"));
-  councilMockState.sessions[first.opencodeSessionId].status = "busy";
-  councilMockState.sessions[second.opencodeSessionId].status = "busy";
-  fs.writeFileSync(mockState, `${JSON.stringify(councilMockState, null, 2)}\n`);
-  const invite = run("chimera", "council", "invite", "--root", target, "--topic", "Which relation should be tested next?", "--participants", "CH-0001,CH-0002", "--max-rounds", "2");
-  const councilId = invite.council.publicId;
-  runWithEnv({ ...env, ARGOS_CHIMERA_ID: "CH-0001" }, "chimera", "council", "accept", "--root", target, "--id", councilId);
-  runWithEnv({ ...env, ARGOS_CHIMERA_ID: "CH-0002" }, "chimera", "council", "accept", "--root", target, "--id", councilId);
-  let council = run("chimera", "council", "begin", "--root", target, "--id", councilId, "--body", "Round one: challenge the current producer assumption.");
-  assert.equal(council.council.currentParticipantId, "CH-0001");
-  council = runWithEnv({ ...env, ARGOS_CHIMERA_ID: "CH-0001" }, "chimera", "council", "turn", "--root", target, "--id", councilId, "--body", "Inspect direct archive entry producers.");
-  assert.equal(council.council.currentParticipantId, "CH-0002");
-  council = runWithEnv({ ...env, ARGOS_CHIMERA_ID: "CH-0002" }, "chimera", "council", "turn", "--root", target, "--id", councilId, "--body", "Inspect stale workspace state as the second gadget.");
-  assert.equal(council.council.currentParticipantId, "coordinator");
-  council = run("chimera", "council", "advance", "--root", target, "--id", councilId, "--body", "Round two: rank the two paths by decisive evidence.");
-  assert.equal(council.council.round, 2);
-  runWithEnv({ ...env, ARGOS_CHIMERA_ID: "CH-0001" }, "chimera", "council", "turn", "--root", target, "--id", councilId, "--body", "Direct producers have the clearer source-to-sink oracle.");
-  runWithEnv({ ...env, ARGOS_CHIMERA_ID: "CH-0002" }, "chimera", "council", "turn", "--root", target, "--id", councilId, "--body", "State chaining has higher impact but needs a durable-state proof.");
-  const councilStatus = run("chimera", "council", "status", "--root", target, "--id", councilId);
-  assert.equal(councilStatus.turns.length, 6);
-  const overLimit = runFailure("chimera", "council", "advance", "--root", target, "--id", councilId, "--body", "Unbounded round");
-  assert(overLimit.includes("round limit"));
-  const closed = run("chimera", "council", "close", "--root", target, "--id", councilId, "--body", "Test direct producers first, then durable state if the source path survives.");
-  assert.equal(closed.council.status, "closed");
-
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  const killedSecond = run("chimera", "kill", "--root", target, "--id", "CH-0002", "--reason", "Resume control");
-  assert.equal(killedSecond.session.status, "stopped");
-  assert(fs.existsSync(path.join(second.sessionDir, "kill.flag")));
-  const resumedSecond = run("chimera", "run", "--root", target, "--id", "CH-0002", "--message", "Resume the same goal once, then stop.");
-  assert(resumedSecond.launch.started);
-  const secondAfterResume = await waitForSession("CH-0002", "stopped");
-  assert.equal(fs.existsSync(path.join(secondAfterResume.sessionDir, "kill.flag")), false);
-  const resumedRun = JSON.parse(fs.readFileSync(path.join(secondAfterResume.sessionDir, "opencode", "run.json"), "utf8"));
-  assert.equal(resumedRun.killed, false);
-  const resumedState = JSON.parse(fs.readFileSync(mockState, "utf8"));
-  assert.equal(resumedState.sessions[secondAfterResume.opencodeSessionId].lastPrompt.agent, secondAfterResume.opencodeAgent);
-  assert.equal(resumedState.sessions[secondAfterResume.opencodeSessionId].lastPrompt.autoApprove, false);
-  assert(fs.existsSync(path.join(secondAfterResume.sessionDir, ".opencode", "agents", `${secondAfterResume.opencodeAgent}.md`)));
-  assert.equal(fs.existsSync(path.join(secondAfterResume.sessionDir, ".opencode", "agents", "changed-global-agent.md")), false);
-  run("chimera", "send", "--root", target, "--to", "CH-0001", "--body", "Remain active for broadcast test.", "--priority");
-  const broadcast = run("chimera", "broadcast", "--root", target, "--body", "Active-only message");
-  assert.equal(broadcast.delivered.length, 1);
-  assert.equal(broadcast.delivered[0].message.toId, "CH-0001");
-
   process.stdout.write("Argos smoke test passed.\n");
 } finally {
-  if (server?.pid) {
-    try { process.kill(server.pid, "SIGTERM"); } catch {}
-  }
-  await new Promise((resolve) => setTimeout(resolve, 100));
   const resolved = path.resolve(temp);
   if (resolved.startsWith(path.resolve(os.tmpdir()) + path.sep) && path.basename(resolved).startsWith("argos-smoke-")) {
     fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
@@ -657,16 +476,6 @@ function runAsyncWithEnv(customEnv, ...args) {
   });
 }
 
-async function waitForSession(id, status) {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
-    const sessions = run("chimera", "list", "--root", target, "--limit", "10");
-    const session = sessions.find((item) => item.publicId === id);
-    if (session?.status === status && session.opencodeSessionId) return session;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`Timed out waiting for ${id} to become ${status}`);
-}
-
 async function waitForObsidianSync(root, customEnv, predicate) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const status = runWithEnv(customEnv, "obsidian", "sync", "status", "--root", root);
@@ -693,32 +502,4 @@ async function renameWithRetry(from, to) {
 
 function sha256(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
-}
-
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-async function waitForHealth(port) {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/global/health`);
-      if (response.ok) return;
-    } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error("Mock OpenCode server did not become healthy");
-}
-
-function pathToFileUrl(file) {
-  const normalized = path.resolve(file).replace(/\\/g, "/");
-  return `file:///${normalized}`;
 }

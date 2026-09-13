@@ -44,6 +44,8 @@ Technical chain traversal uses the recorded direction of `exposes`, `calls`, `fl
 
 Titles identify the real item. Aliases help resolve symbols, paths, old names, and labels. Exact title or alias matches return the canonical node. Strong but ambiguous matches stop creation until the caller reviews them and passes `distinctFrom` for items confirmed to be different.
 
+The visible graph represents current knowledge. When the understanding, version, payload, or proof for an item changes, update its canonical node and let internal revisions retain the former text. Do not preserve an old representation as a generic node or create a new identity only because historical tests need context. Put that scope in the test or evidence node. Create another node only for an independently existing current item.
+
 If later evidence proves that two nodes are the same item, merge the duplicate into the chosen canonical node with an explicitly reviewed body. The retired ID remains resolvable; its history and graph connections move to the canonical identity.
 
 ## Suggestions

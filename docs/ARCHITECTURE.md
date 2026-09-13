@@ -40,6 +40,12 @@ review instead of silently creating a second representation of the same item.
 - A reviewed merge requires a consolidated body, rewires relations, retains
   both histories, and redirects the retired ID to the canonical node.
 
+The visible node describes the current item. Changes in understanding, tested
+version, payload shape, or proof update that node; internal revisions retain the
+old text. A historical test records its own scope and does not need a generic
+copy of the target item. A separate node is valid only when both items exist
+independently in the current map.
+
 Identity resolution and insertion run in one immediate transaction. Parallel
 attempts to create the same item resolve to one node.
 
@@ -137,17 +143,7 @@ Target knowledge lives in:
 
 Writes use WAL mode, SQLite busy retries, immediate transactions for compound
 operations, and a process-wide file lock shared by every Argos CLI and MCP
-process for that database. Message creation, message consumption, session
-claims, and council turns use the same pattern.
-
-Chimera runtime state uses a separate database:
-
-```text
-<root>/.argos/chimera/runtime.sqlite
-```
-
-Operational sessions and chat records therefore do not become target knowledge
-nodes.
+process for that database.
 
 ## Obsidian Projection
 
@@ -183,5 +179,4 @@ text copy for hosts that do not consume structured content.
 
 Plugin packages expose the same skills and MCP runtime to Codex and Claude Code.
 OpenCode project support installs local skills, instructions, `/argos`, and MCP
-wiring. Chimera uses OpenCode as an optional co-agent runtime and remains
-separate from OpenCode acting as the main coordinator.
+wiring so OpenCode can use Argos as the main research interface.

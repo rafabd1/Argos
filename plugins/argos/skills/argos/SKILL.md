@@ -1,6 +1,6 @@
 ---
 name: argos
-description: Build, query, and revise an Argos knowledge graph during deep security research. Use when mapping a target, recovering prior knowledge, recording components or sinks, linking evidence, revisiting conclusions, finding blind spots, exploring chains, or coordinating Chimera co-agents.
+description: Build, query, and revise an Argos knowledge graph during deep security research. Use when mapping a target, recovering prior knowledge, recording components or sinks, linking evidence, revisiting conclusions, finding blind spots, or exploring chains.
 ---
 
 # Argos
@@ -28,12 +28,13 @@ A node represents one real item. The note body is free-form Markdown.
 
 - Resolve before create.
 - Update the existing node when the same component, sink, test scenario, or hypothesis already exists.
+- Keep the visible node as the current understanding of that item. A changed interpretation, tested version, payload shape, or stronger proof belongs in an update, not a replacement node.
 - Use aliases for symbols, paths, old names, and common labels.
-- Create a distinct node only when it has an independent identity and can change separately.
+- Create a distinct node only when it has an independent identity, still exists in the current map, and can change separately.
 - Link facts instead of repeating them in several notes.
 - Promote a premise from prose to a node when it can be tested, revised, or reused by another conclusion. Do not create a node for every checklist line.
 
-Argos keeps prior note bodies as internal revisions. Do not create a second node as history.
+Argos keeps prior note bodies as internal revisions. Never keep a generic umbrella node or create a second node only to preserve an old test, name, conclusion, or representation. Record the old scope and version in the test or evidence note while the canonical target item stays current.
 If two existing nodes are later proven to be the same item, inspect both and use the explicit merge operation with a reviewed consolidated body. Do not leave parallel canonical identities or discard one note's evidence.
 
 ## Let Relations Change The Work
@@ -111,25 +112,6 @@ Follow a promising path through the layer that actually implements it. That may 
 Do not call a broad area covered because the visible wrapper was read. State what remains outside the tested scope and connect it to the relevant nodes.
 
 Before treating a candidate as finished, search for realistic impact elevation. Check alternate consumers, stronger authority transitions, durable effects, and combinations with other mapped sinks. Keep the strongest impact that works in a common, correctly configured scenario. Artificially weakened limits, trust, permissions, or isolation do not establish impact.
-
-## Chimera Coordination
-
-Use Chimera for an independent research front that benefits from a different model or a full parallel line of reasoning. Use an ordinary subagent for a small bounded task when one is available.
-
-When starting a co-agent:
-
-- provide a complete goal and stop condition;
-- attach the canonical nodes that explain the target and current lead;
-- include exact scope and access rules;
-- choose `explorer` for read-only target work or `editor` with explicit path rules;
-- override network or autoapproval per session when the front needs a narrower or broader runtime than the user default;
-- reuse an existing session when its goal and context still fit.
-
-Let a Chimera co-agent reason independently. Poll for results at useful checkpoints and intervene for scope changes, blockers, a strong signal, or a needed pivot. Do not supervise each command.
-
-Use `send --priority` to place an urgent message directly into an existing OpenCode session. Use `run` only to recover a stopped session when direct messaging cannot resume it. `start` creates and starts a new session.
-
-Call a council when several active fronts can resolve a pivot, challenge a shared premise, or generate better paths after weak progress. Keep the default two rounds unless another round has a clear decision value. The coordinator opens each round and closes with one conclusion; Argos cues participants in order.
 
 ## Command Reference
 

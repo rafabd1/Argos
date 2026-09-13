@@ -13,7 +13,6 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), "argos-mcp-smoke-"));
 const target = path.join(temp, "target");
 const env = {
   ...process.env,
-  ARGOS_HOME: path.join(temp, "home"),
   ARGOS_DISABLE_OBSIDIAN_SYNC: "1",
   OPENCODE_COMMAND: process.execPath
 };
@@ -38,10 +37,11 @@ try {
   const initialized = await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } });
   assert.equal(initialized.serverInfo.name, "argos");
   const listed = await request("tools/list", {});
-  assert(listed.tools.length >= 30, `Expected complete MCP surface, got ${listed.tools.length}`);
+  assert(listed.tools.length >= 24, `Expected complete MCP surface, got ${listed.tools.length}`);
   assert(listed.tools.some((tool) => tool.name === "argos_inspect_node"));
   assert(listed.tools.some((tool) => tool.name === "argos_opencode_install"));
   assert(listed.tools.some((tool) => tool.name === "argos_obsidian_sync"));
+  assert.equal(listed.tools.some((tool) => tool.name.startsWith("argos_chimera_")), false);
   for (const tool of listed.tools) {
     assert.equal(tool.inputSchema.type, "object", `${tool.name} schema type`);
     assert.equal(tool.inputSchema.additionalProperties, false, `${tool.name} must reject unknown top-level fields`);
@@ -104,8 +104,6 @@ try {
   assert.deepEqual(inspection.structuredContent.chains, inspection.structuredContent.technicalChains);
   const search = await call("argos_search", { root: target, query: "target object", depth: 1, limit: 10 });
   assert(search.structuredContent.result.some((hit) => hit.node.publicId === sinkId));
-  const config = await call("argos_chimera_config", { action: "show" });
-  assert.equal(config.structuredContent.maxAgents, 5);
   const bad = await call("argos_get_node", { root: target, id: "N999999" });
   assert.equal(bad.isError, true);
 

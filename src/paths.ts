@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 export function resolveTargetRoot(input?: string): string {
@@ -24,28 +23,6 @@ export function defaultVaultPath(root: string): string {
 
 export function obsidianSyncStatePath(root: string): string {
   return path.join(argosDir(root), "obsidian-sync.json");
-}
-
-export function chimeraDir(root: string): string {
-  return path.join(argosDir(root), "chimera");
-}
-
-export function chimeraDbPath(root: string): string {
-  return path.join(chimeraDir(root), "runtime.sqlite");
-}
-
-export function chimeraSessionsDir(root: string): string {
-  return path.join(chimeraDir(root), "sessions");
-}
-
-export function globalArgosDir(): string {
-  return process.env.ARGOS_HOME
-    ? path.resolve(process.env.ARGOS_HOME)
-    : path.join(os.homedir(), ".argos");
-}
-
-export function globalChimeraConfigPath(): string {
-  return path.join(globalArgosDir(), "chimera", "config.json");
 }
 
 export function ensureDir(dir: string): void {
