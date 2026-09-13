@@ -24,6 +24,22 @@ export interface NodeSummary extends Omit<KnowledgeNode, "content"> {
   excerpt: string;
 }
 
+export interface NodeListItem extends NodeSummary {
+  aliasCount: number;
+  aliasesTruncated: boolean;
+}
+
+export interface NodeListPage {
+  nodes: NodeListItem[];
+  returned: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  nextOffset: number | null;
+  truncatedByBudget: boolean;
+  maxPayloadBytes: number;
+}
+
 export interface KnowledgeEdge {
   id: number;
   publicId: string;
@@ -99,7 +115,6 @@ export interface KnowledgeInspection {
     relationLimit: number;
     relationsTruncated: boolean;
     supersededBy: NodeSummary[];
-    revisionCount: number;
   };
   map: GraphMap;
   gaps: KnowledgeGap[];

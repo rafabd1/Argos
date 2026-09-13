@@ -7,6 +7,8 @@ description: Map a security-relevant codebase area into canonical Argos componen
 
 Map what controls later decisions. Do not turn the repository into a file catalog.
 
+Record only durable target knowledge in Argos. Keep coverage logs, assignments, task state, and tool issues outside the graph.
+
 ## Choose A Useful Center
 
 Start from a concrete request path, sink, state transition, trust boundary, parser, worker, or data object. Search Argos first and open the nearest existing map.

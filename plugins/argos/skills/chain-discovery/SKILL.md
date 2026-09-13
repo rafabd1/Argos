@@ -7,6 +7,8 @@ description: Develop realistic, non-obvious security chains from Argos sinks, si
 
 A sink becomes a gadget when its output, authority, state change, or side effect helps another operation.
 
+Record only durable target knowledge in Argos. Keep run progress, task state, tool issues, and agent coordination outside the graph.
+
 ## Recover The Local Graph
 
 Open the sink node, map two or three hops, and query bounded paths to other sinks. Technical paths follow the recorded edge direction. `contains`, `supports`, `derived_from`, and other context links help explain the map but do not connect gadgets. Check old tests and conclusions before proposing new work.

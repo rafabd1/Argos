@@ -21,18 +21,24 @@ argos node create --type <type> --title <title> [--content <markdown> | --conten
                   [--aliases <a,b>] [--distinct-from <N...,...>]
 argos node update --id <N...> [--title <title>] [--content <markdown> | --content-file <path|->]
                   [--aliases <a,b>] [--mode replace|append]
+                  [--old-text <exact>] [--new-text <replacement>] [--edits-file <path|->]
+argos node remove --id <N...> --reason <reason>
 argos node merge --source <N...> --into <N...> --content <reviewed-markdown>
                  [--title <title>] [--aliases <a,b>]
 argos node get --id <N...> [--relation-limit <n>]
 argos node list [--type <type>] [--limit <n>] [--offset <n>]
-argos history --id <N...> [--limit <n>]
 ```
 
-MCP: `argos_resolve_node`, `argos_create_node`, `argos_update_node`, `argos_merge_nodes`, `argos_get_node`, `argos_list_nodes`, `argos_node_history`.
+MCP: `argos_resolve_node`, `argos_create_node`, `argos_update_node`, `argos_remove_node`, `argos_merge_nodes`, `argos_get_node`, `argos_list_nodes`.
+
+`argos_list_nodes` returns a bounded page. Follow `nextOffset` only while
+`hasMore` is true, then use `argos_get_node` for selected full notes. Do not
+request broad pages to reconstruct the whole graph in model context.
 
 Use `--content-file -` to read Markdown from stdin. A create result with `resolutionRequired: true` means the caller must inspect candidates. Exact identity returns `canonical` instead of creating a duplicate.
-Use `node update` when the same item's current interpretation, version, payload, or proof changes. Internal revisions retain the earlier text; do not create historical or generic copies to preserve old tests.
-Merge only after both notes are confirmed to be one item. Supply the reviewed final body; Argos preserves aliases and revisions, rewires relations, and redirects the retired ID.
+Use `node update` when the same item's current interpretation, version, payload, or proof changes. Use `--old-text` with `--new-text` for one edit and `--new-text=` for deletion. `--edits-file` accepts an ordered JSON array of `{ "oldText": "...", "newText": "..." }` edits. Each old text must match once or the full update fails unchanged.
+Merge only after both notes are confirmed to be one item. Supply the reviewed final body; Argos preserves aliases, rewires relations, redirects the retired ID, and discards former bodies.
+Use `node remove` only for an item that never belonged in target knowledge. It permanently removes the canonical node and connected graph data. Update inaccurate target knowledge instead.
 
 ## Relations And Retrieval
 

@@ -20,7 +20,15 @@ Do not load the whole graph. Expand around the current item, then follow only re
 
 Use `inspect` after search when one node is the likely center. It returns the note, local map, coverage gaps, nearby sink paths, and pending suggestions in one bounded call.
 
-At a useful checkpoint, inspect the active hypothesis and its terminal sinks or boundaries again. This catches changed premises without turning Argos into a campaign manager.
+At a useful research pause, inspect the active hypothesis and its terminal sinks or boundaries again. This catches changed premises before the next decision.
+
+## Target Knowledge Only
+
+Argos contains durable knowledge about the target. Keep work logs, task lists, campaign journals, issue reports, transcripts, checkpoints, contracts, and agent state outside the graph.
+
+Never create a node for a goal, stop condition, assignment, progress report, tool error, Argos defect, runtime configuration, agent message, usage note, or coverage ledger that only describes completed work. Put operational notes in ignored workspace or harness files outside `.argos`.
+
+An `artifact` belongs in Argos only when it is target evidence, such as a PoC, trace, sample, report, or reproducible test output that can change a target conclusion. Before creating any node, ask whether it would still help someone understand or test the target after the current run ends. If not, do not store it.
 
 ## One Item, One Node
 
@@ -34,8 +42,9 @@ A node represents one real item. The note body is free-form Markdown.
 - Link facts instead of repeating them in several notes.
 - Promote a premise from prose to a node when it can be tested, revised, or reused by another conclusion. Do not create a node for every checklist line.
 
-Argos keeps prior note bodies as internal revisions. Never keep a generic umbrella node or create a second node only to preserve an old test, name, conclusion, or representation. Record the old scope and version in the test or evidence note while the canonical target item stays current.
+Argos keeps only the latest body of each canonical node. Use ordered exact edits for small corrections or replace the body when stale text must disappear. Never keep a generic umbrella node or create a second node to preserve an old test, name, conclusion, or representation.
 If two existing nodes are later proven to be the same item, inspect both and use the explicit merge operation with a reviewed consolidated body. Do not leave parallel canonical identities or discard one note's evidence.
+If a campaign or runtime record entered the graph by mistake, remove that node explicitly. Do not remove stale or refuted target knowledge merely because its conclusion changed; edit its current note and relations instead.
 
 ## Let Relations Change The Work
 

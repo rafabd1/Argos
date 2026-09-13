@@ -2,6 +2,30 @@
 
 All notable changes to Argos are documented here.
 
+## [0.1.4] - 2026-09-13
+
+### Added
+
+- Canonical node updates can apply ordered exact text edits without resending the full Markdown body.
+- `argos_remove_node` and `argos node remove` permanently remove records that never belonged in target knowledge, with their connected graph data.
+
+### Changed
+
+- `argos_list_nodes` now returns an output-bounded page with explicit continuation metadata.
+- MCP node lists default to 20 records, accept at most 100, cap each payload at 8 KiB, and shorten large alias sets.
+- MCP text content uses compact JSON to avoid spending model context on formatting whitespace.
+- Argos now keeps only the latest canonical node body. Updates and merges discard replaced text instead of retaining internal revisions.
+- Skills and runtime guidance now keep campaign logs, task state, messages, and tool or agent runtime notes outside the target graph.
+
+### Fixed
+
+- Node pagination now uses a stable timestamp-and-ID order so adjacent pages do not repeat or skip tied records.
+- Exact node edits fail atomically when the selected text is missing or ambiguous.
+
+### Removed
+
+- Node revision storage and the CLI/MCP history operations.
+
 ## [0.1.3] - 2026-09-13
 
 ### Changed

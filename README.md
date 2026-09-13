@@ -32,7 +32,7 @@ explicit.
 
 | Canonical knowledge | Linked recovery | Blind-spot checks | Obsidian view |
 | --- | --- | --- | --- |
-| One current note per item, with hidden revision history. | Bounded subgraphs instead of full database dumps. | Partial path coverage, mixed evidence, old premises, and missing context. | Automatically refreshed Markdown notes, exact graph links, a compact index, and a Bases explorer. |
+| One current note per item. Replaced text is discarded. | Bounded subgraphs instead of full database dumps. | Partial path coverage, mixed evidence, old premises, and missing context. | Automatically refreshed Markdown notes, exact graph links, a compact index, and a Bases explorer. |
 
 ## Install
 
@@ -106,17 +106,22 @@ Creating a node first checks titles, aliases, symbols, paths, and strong content
 matches. An exact identity returns the existing node. Ambiguous matches stop
 creation until the caller reviews them, including exact identities already
 recorded under another node type. If two reviewed nodes prove to be the same
-item, an explicit merge preserves their aliases, revisions, and relations under
-one canonical ID. Suggested links stay outside the graph until accepted.
+item, an explicit merge keeps their aliases and relations under one canonical
+ID. Suggested links stay outside the graph until accepted.
 
 The visible graph reflects current knowledge. When an item's interpretation,
-tested version, or proof changes, update its canonical note and keep the old
-scope in the related test or evidence note. Internal revisions preserve prior
-text without adding historical copies to the map.
+tested version, or proof changes, update its canonical note. Exact text edits
+can revise a small part without resending the whole body. Replaced text is not
+retained. Tests and evidence keep their own current scope when they are distinct
+items in the target map.
+
+Argos stores knowledge about the target. Campaign goals, work logs, task state,
+agent messages, tool errors, and runtime notes belong outside the graph. A node
+created for one of those by mistake can be removed explicitly with its links.
 
 Every read includes `updatedAt` and `ageDays`. An update refreshes that age only
-when the canonical note changes. Old knowledge remains available as prior
-evidence and signals when revalidation may be useful.
+when the canonical note changes. Age signals when current knowledge may need
+revalidation.
 
 ## Retrieval
 

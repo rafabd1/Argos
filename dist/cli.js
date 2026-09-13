@@ -113,11 +113,6 @@ async function main() {
         print(withDb(root, (db) => db.stale(numberOption(parsed, "age-days"), numberOption(parsed, "limit") ?? 100)));
         return;
     }
-    if (command === "history") {
-        const id = referenceValue(option(parsed, "id"), subcommand, "node id");
-        print(withDb(root, (db) => db.history(requiredValue(id, "node id"), numberOption(parsed, "limit") ?? 50)));
-        return;
-    }
     if (command === "export" && subcommand === "obsidian") {
         print(withDb(root, (db) => (0, obsidian_1.exportObsidian)(db, option(parsed, "out"), flag(parsed, "prune")), false));
         return;
@@ -179,12 +174,19 @@ async function handleNode(root, subcommand, rest, parsed) {
         const modeValue = option(parsed, "mode");
         if (modeValue && modeValue !== "replace" && modeValue !== "append")
             throw new Error("--mode must be replace or append");
+        const edits = readEdits(parsed);
         print(withDb(root, (db) => db.updateNode(requiredValue(id, "node id"), {
             title: option(parsed, "title"),
             content: readContent(parsed),
             aliases: parsed.options.has("aliases") ? listOption(parsed, "aliases") : undefined,
-            mode: modeValue
+            mode: modeValue,
+            edits
         })));
+        return;
+    }
+    if (subcommand === "remove") {
+        const id = referenceValue(option(parsed, "id"), rest[0], "node id");
+        print(withDb(root, (db) => db.removeNode(requiredValue(id, "node id"), requiredOption(parsed, "reason"))));
         return;
     }
     if (subcommand === "merge") {
@@ -217,7 +219,7 @@ async function handleNode(root, subcommand, rest, parsed) {
         print(withDb(root, (db) => db.resolveIdentity(requiredOption(parsed, "type"), requiredOption(parsed, "title"), listOption(parsed, "aliases"), numberOption(parsed, "limit") ?? 10, readContent(parsed) ?? "")));
         return;
     }
-    throw new Error("Usage: argos node create|update|merge|get|list|resolve");
+    throw new Error("Usage: argos node create|update|remove|merge|get|list|resolve");
 }
 function handleLink(root, subcommand, rest, parsed) {
     if (subcommand === "add") {
@@ -347,7 +349,9 @@ function allowedOptions(command, subcommand, rest) {
         if (subcommand === "create")
             return ["type", "title", "content", "content-file", "aliases", "distinct-from"];
         if (subcommand === "update")
-            return ["id", "title", "content", "content-file", "aliases", "mode"];
+            return ["id", "title", "content", "content-file", "aliases", "mode", "old-text", "new-text", "edits-file"];
+        if (subcommand === "remove")
+            return ["id", "reason"];
         if (subcommand === "merge")
             return ["source", "into", "title", "content", "content-file", "aliases"];
         if (subcommand === "get")
@@ -383,8 +387,6 @@ function allowedOptions(command, subcommand, rest) {
         return ["id", "age-days"];
     if (command === "stale")
         return ["age-days", "limit"];
-    if (command === "history")
-        return ["id", "limit"];
     if (command === "export" && subcommand === "obsidian")
         return ["out", "prune"];
     if (command === "obsidian" && subcommand === "sync") {
@@ -398,7 +400,7 @@ function assertPositionals(command, subcommand, rest) {
     if (command === "search")
         return;
     if (command === "node") {
-        const maximum = subcommand === "update" || subcommand === "get" ? 1 : 0;
+        const maximum = subcommand === "update" || subcommand === "remove" || subcommand === "get" ? 1 : 0;
         if (rest.length > maximum)
             throw new Error(`Unexpected positional argument: ${rest[maximum]}`);
         return;
@@ -409,7 +411,7 @@ function assertPositionals(command, subcommand, rest) {
             throw new Error(`Unexpected positional argument: ${rest[maximum]}`);
         return;
     }
-    if (["inspect", "map", "chains", "gaps", "history"].includes(command)) {
+    if (["inspect", "map", "chains", "gaps"].includes(command)) {
         if (rest.length > 0)
             throw new Error(`Unexpected positional argument: ${rest[0]}`);
         return;
@@ -438,6 +440,44 @@ function readContent(parsed) {
         return node_fs_1.default.readFileSync(node_path_1.default.resolve(file), "utf8");
     return undefined;
 }
+function readEdits(parsed) {
+    const hasFile = parsed.options.has("edits-file");
+    const file = option(parsed, "edits-file");
+    const hasOldText = parsed.options.has("old-text");
+    const hasNewText = parsed.options.has("new-text");
+    const hasDirectEdit = hasOldText || hasNewText;
+    if (hasFile && file === undefined)
+        throw new Error("Missing --edits-file value");
+    if (hasFile && !file)
+        throw new Error("--edits-file cannot be empty");
+    if (hasFile && hasDirectEdit)
+        throw new Error("Use either --edits-file or --old-text/--new-text");
+    if ((hasFile || hasDirectEdit) && (parsed.options.has("content") || parsed.options.has("content-file"))) {
+        throw new Error("Use either exact text edits or --content/--content-file");
+    }
+    if (hasDirectEdit) {
+        if (!hasOldText || !hasNewText)
+            throw new Error("Use --old-text and --new-text together");
+        if (parsed.options.get("old-text") === true)
+            throw new Error("Missing --old-text value");
+        if (parsed.options.get("new-text") === true)
+            throw new Error("Missing --new-text value; use --new-text= to delete the matched text");
+        return [{ oldText: option(parsed, "old-text") ?? "", newText: option(parsed, "new-text") ?? "" }];
+    }
+    if (!hasFile)
+        return undefined;
+    const raw = file === "-" ? node_fs_1.default.readFileSync(0, "utf8") : node_fs_1.default.readFileSync(node_path_1.default.resolve(file), "utf8");
+    let value;
+    try {
+        value = JSON.parse(raw);
+    }
+    catch {
+        throw new Error("--edits-file must contain valid JSON");
+    }
+    if (!Array.isArray(value))
+        throw new Error("--edits-file must contain a JSON array");
+    return value;
+}
 function print(value) {
     node_process_1.default.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
@@ -454,6 +494,8 @@ Usage:
                     [--aliases <a,b>] [--distinct-from <N...>]
   argos node update --id <N...> [--title <title>] [--content <markdown> | --content-file <path|->]
                     [--aliases <a,b>] [--mode replace|append]
+                    [--old-text <exact>] [--new-text <replacement>] [--edits-file <path|->]
+  argos node remove --id <N...> --reason <reason>
   argos node merge --source <N...> --into <N...> --content-file <reviewed-markdown>
                    [--title <title>] [--aliases <a,b>]
   argos node get --id <N...> [--relation-limit <n>]
@@ -472,18 +514,19 @@ Usage:
   argos chains --from <N...> [--max-hops <1-7>] [--limit <n>]
   argos gaps [--id <N...>] [--age-days <n>]
   argos stale [--age-days <n>] [--limit <n>]
-  argos history <N...> [--limit <n>]
   argos export obsidian [--out <path>] [--prune]
   argos obsidian sync enable [--out <path>] [--interval-seconds <n>] [--prune true|false]
   argos obsidian sync status|refresh|disable
   argos opencode install [--force]
   argos opencode doctor
 
-  All commands accept --root. Node content is free-form Markdown. Structural
-changes require explicit node and relation operations; Argos never infers them
-from prose. Obsidian sync checks for pending graph changes after normal workspace
-operations and can be disabled persistently with argos obsidian sync disable.
-Fresh targets use <root>/.argos/obsidian/<config-name> as the default vault.
+  All commands accept --root. Store durable target knowledge only, never campaign
+  logs, task state, messages, or tool/runtime issues. Node content is free-form
+  Markdown. Structural changes require explicit node and relation operations;
+  Argos never infers them from prose. Obsidian sync checks for pending graph
+  changes after normal workspace operations and can be disabled persistently
+  with argos obsidian sync disable. Fresh targets use
+  <root>/.argos/obsidian/<config-name> as the default vault.
 `);
 }
 main().catch((error) => {

@@ -39,6 +39,8 @@ try {
   const listed = await request("tools/list", {});
   assert(listed.tools.length >= 24, `Expected complete MCP surface, got ${listed.tools.length}`);
   assert(listed.tools.some((tool) => tool.name === "argos_inspect_node"));
+  assert(listed.tools.some((tool) => tool.name === "argos_remove_node"));
+  assert.equal(listed.tools.some((tool) => tool.name === "argos_node_history"), false);
   assert(listed.tools.some((tool) => tool.name === "argos_opencode_install"));
   assert(listed.tools.some((tool) => tool.name === "argos_obsidian_sync"));
   assert.equal(listed.tools.some((tool) => tool.name.startsWith("argos_chimera_")), false);
@@ -62,7 +64,7 @@ try {
   const sinkId = sink.structuredContent.node.publicId;
   const emptyUpdate = await call("argos_update_node", { root: target, id: componentId });
   assert.equal(emptyUpdate.isError, true);
-  assert(emptyUpdate.structuredContent.error.includes("requires a title, content, or aliases change"));
+  assert(emptyUpdate.structuredContent.error.includes("requires a title, content, aliases, or exact text edits"));
   const unchangedAt = component.structuredContent.node.updatedAt;
   const unchangedUpdate = await call("argos_update_node", {
     root: target,
@@ -70,6 +72,26 @@ try {
     content: component.structuredContent.node.content
   });
   assert.equal(unchangedUpdate.structuredContent.updatedAt, unchangedAt);
+  const exactEdit = await call("argos_update_node", {
+    root: target,
+    id: componentId,
+    edits: [{ oldText: "Owns the test route.", newText: "Owns the tested route." }]
+  });
+  assert.equal(exactEdit.structuredContent.content, "Owns the tested route.");
+  const beforeFailedEdit = exactEdit.structuredContent;
+  const failedEdit = await call("argos_update_node", {
+    root: target,
+    id: componentId,
+    edits: [
+      { oldText: "Owns", newText: "Controls" },
+      { oldText: "missing text", newText: "must fail" }
+    ]
+  });
+  assert.equal(failedEdit.isError, true);
+  assert(failedEdit.structuredContent.error.includes("expected one oldText match but found 0"));
+  const afterFailedEdit = await call("argos_get_node", { root: target, id: componentId });
+  assert.equal(afterFailedEdit.structuredContent.node.content, beforeFailedEdit.content);
+  assert.equal(afterFailedEdit.structuredContent.node.updatedAt, beforeFailedEdit.updatedAt);
   const duplicate = await call("argos_create_node", { root: target, type: "component", title: "MCP component", content: "ignored", aliases: [], distinctFrom: [] });
   assert.equal(duplicate.structuredContent.created, false);
   assert.equal(duplicate.structuredContent.canonical.publicId, componentId);
@@ -92,6 +114,14 @@ try {
   assert.equal(wrongType.isError, true);
   assert(wrongType.structuredContent.error.includes("depth"));
   await call("argos_add_link", { root: target, fromId: componentId, type: "writes", toId: sinkId });
+  const removable = await call("argos_create_node", { root: target, type: "artifact", title: "Temporary runtime log", content: "Operational state that does not belong in target knowledge.", aliases: [], distinctFrom: [] });
+  const removableId = removable.structuredContent.node.publicId;
+  await call("argos_add_link", { root: target, fromId: removableId, type: "supports", toId: componentId });
+  const removed = await call("argos_remove_node", { root: target, id: removableId, reason: "Operational test record" });
+  assert.equal(removed.structuredContent.removed.publicId, removableId);
+  assert.equal(removed.structuredContent.removedEdges, 1);
+  const removedRead = await call("argos_get_node", { root: target, id: removableId });
+  assert.equal(removedRead.isError, true);
   const map = await call("argos_map", { root: target, id: componentId, depth: 2, limit: 1 });
   assert.equal(map.structuredContent.root.publicId, componentId);
   assert.equal(map.structuredContent.nodes.length, 1);
@@ -104,6 +134,54 @@ try {
   assert.deepEqual(inspection.structuredContent.chains, inspection.structuredContent.technicalChains);
   const search = await call("argos_search", { root: target, query: "target object", depth: 1, limit: 10 });
   assert(search.structuredContent.result.some((hit) => hit.node.publicId === sinkId));
+  for (let index = 0; index < 24; index += 1) {
+    await call("argos_create_node", {
+      root: target,
+      type: "sink",
+      title: `MCP paged sink ${String(index).padStart(2, "0")}`,
+      content: `Compact page entry ${index}. ${"bounded context ".repeat(30)}`,
+      aliases: [],
+      distinctFrom: []
+    });
+  }
+  const longAliases = Array.from({ length: 100 }, (_, index) => `alias-${String(index).padStart(3, "0")}-${"x".repeat(180)}`);
+  await call("argos_create_node", {
+    root: target,
+    type: "sink",
+    title: "MCP payload budget sink",
+    content: "Exercises bounded list output. ".repeat(80),
+    aliases: longAliases,
+    distinctFrom: []
+  });
+  const nodePage = await call("argos_list_nodes", { root: target, type: "sink" });
+  assert.equal(nodePage.structuredContent.limit, 20);
+  assert(nodePage.structuredContent.returned > 0);
+  assert(nodePage.structuredContent.returned <= 20);
+  assert.equal(nodePage.structuredContent.hasMore, true);
+  assert.equal(nodePage.structuredContent.nextOffset, nodePage.structuredContent.returned);
+  assert.equal(nodePage.structuredContent.truncatedByBudget, true);
+  assert.equal(nodePage.structuredContent.maxPayloadBytes, 8 * 1024);
+  assert(Buffer.byteLength(nodePage.content[0].text, "utf8") <= nodePage.structuredContent.maxPayloadBytes);
+  assert.equal(nodePage.content[0].text.includes("\n"), false);
+  assert.deepEqual(JSON.parse(nodePage.content[0].text), nodePage.structuredContent);
+  const oversizedList = await call("argos_list_nodes", { root: target, limit: 101 });
+  assert.equal(oversizedList.isError, true);
+  assert(oversizedList.structuredContent.error.includes("limit"));
+  const allSinkIds = new Set();
+  let nextOffset = 0;
+  do {
+    const page = await call("argos_list_nodes", { root: target, type: "sink", limit: 20, offset: nextOffset });
+    for (const node of page.structuredContent.nodes) allSinkIds.add(node.publicId);
+    if (!page.structuredContent.hasMore) break;
+    assert(page.structuredContent.nextOffset > nextOffset);
+    nextOffset = page.structuredContent.nextOffset;
+  } while (true);
+  assert.equal(allSinkIds.size, 26);
+  const aliasedSummary = nodePage.structuredContent.nodes.find((node) => node.title === "MCP payload budget sink");
+  assert(aliasedSummary);
+  assert.equal(aliasedSummary.aliasCount, 100);
+  assert.equal(aliasedSummary.aliases.length, 5);
+  assert.equal(aliasedSummary.aliasesTruncated, true);
   const bad = await call("argos_get_node", { root: target, id: "N999999" });
   assert.equal(bad.isError, true);
 

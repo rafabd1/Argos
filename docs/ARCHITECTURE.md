@@ -34,20 +34,24 @@ review instead of silently creating a second representation of the same item.
 - `distinctFrom` records that the caller reviewed those candidates before
   creating a separate item.
 - A rename keeps the old title as an alias.
-- Updating a node stores the old body in `node_revisions`.
-- An empty or unchanged update creates no revision and does not refresh the
-  note's age.
+- An update replaces or extends the current body. Ordered exact edits can change
+  small sections without sending the complete note again.
+- Replaced content is discarded. An empty or unchanged update does not refresh
+  the note's age.
 - A reviewed merge requires a consolidated body, rewires relations, retains
-  both histories, and redirects the retired ID to the canonical node.
+  aliases, and redirects the retired ID to the canonical node.
+- An explicit removal deletes a node that never belonged in target knowledge,
+  along with its relations, suggestions, and redirects.
 
 The visible node describes the current item. Changes in understanding, tested
-version, payload shape, or proof update that node; internal revisions retain the
-old text. A historical test records its own scope and does not need a generic
-copy of the target item. A separate node is valid only when both items exist
-independently in the current map.
+version, payload shape, or proof update that node. A separate test or evidence
+node is valid only when it represents an independently useful current item.
+Campaign state, progress logs, task lists, messages, runtime health, and tool
+issues stay outside the graph.
 
 Identity resolution and insertion run in one immediate transaction. Parallel
-attempts to create the same item resolve to one node.
+attempts to create the same item resolve to one node. Exact text edits, merges,
+and removals are also atomic.
 
 ## Retrieval
 

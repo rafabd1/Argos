@@ -35,10 +35,12 @@ Create or update free-form Markdown:
 ```powershell
 argos node create --root C:\path\to\target --type sink --title "Archive file write" --content-file sink.md --aliases "writeEntry"
 argos node update --root C:\path\to\target --id N000012 --mode append --content "A second producer reaches this sink."
+argos node update --root C:\path\to\target --id N000012 --old-text "Old exact sentence." --new-text "Corrected sentence."
+argos node update --root C:\path\to\target --id N000012 --edits-file edits.json
 argos node merge --root C:\path\to\target --source N000021 --into N000012 --content-file consolidated.md
+argos node remove --root C:\path\to\target --id N000021 --reason "Operational log created by mistake"
 argos node get --root C:\path\to\target --id N000012 --relation-limit 200
 argos node list --root C:\path\to\target --type sink --limit 50 --offset 0
-argos history --root C:\path\to\target --id N000012 --limit 20
 ```
 
 Use `--content-file -` to read Markdown from stdin. Exact identity returns
@@ -46,9 +48,22 @@ Use `--content-file -` to read Markdown from stdin. Exact identity returns
 `resolutionRequired: true` and exits with code 2. After review, pass the checked
 IDs through `--distinct-from` only when the item is genuinely separate.
 
-`node update` requires at least one of title, content, or aliases. An identical
-replacement and an empty append are no-ops: they create no revision and do not
-refresh `updatedAt`.
+`node update` requires a title, content, aliases, or exact text edits. An
+identical replacement and an empty append are no-ops and do not refresh
+`updatedAt`. Use `--old-text` with `--new-text` for one exact edit. Pass
+`--new-text=` explicitly when deleting the matched text.
+`--edits-file` accepts several edits as a JSON array:
+
+```json
+[
+  { "oldText": "Current exact sentence.", "newText": "Corrected sentence." },
+  { "oldText": "Obsolete paragraph.", "newText": "" }
+]
+```
+
+Edits run in order as one transaction. Each `oldText` must match exactly once at
+its step. A missing or ambiguous match rejects the whole update without changing
+the node.
 
 Use an update when the same item's current interpretation, version, payload, or
 proof changes. Historical tests keep their scope in their own note; they do not
@@ -56,12 +71,23 @@ require a generic or former copy of the target item in the visible graph.
 
 Use `node merge` only after confirming that two nodes describe the same real
 item. The supplied Markdown becomes the reviewed canonical body. Argos keeps
-both note histories, folds source names into aliases, rewires relations and
-suggestions, and resolves later reads of the retired ID to the destination.
+source names as aliases, rewires relations and suggestions, and resolves later
+reads of the retired ID to the destination. Former bodies are discarded.
+
+Use `node remove` only when a node should never have entered the target map. It
+requires the canonical ID and removes connected relations, suggestions, and
+redirects. Its required reason is returned for confirmation but is not stored.
+Correct stale or inaccurate target knowledge with `node update`.
 
 MCP: `argos_resolve_node`, `argos_create_node`, `argos_update_node`,
-`argos_merge_nodes`, `argos_get_node`, `argos_list_nodes`,
-`argos_node_history`.
+`argos_remove_node`, `argos_merge_nodes`, `argos_get_node`,
+`argos_list_nodes`.
+
+`argos_list_nodes` returns a bounded page with at most 20 summaries by default
+and accepts no more than 100. The response reports `hasMore` and `nextOffset`;
+an 8 KiB payload ceiling may end a page earlier. Aliases are shortened in list
+results, so use `argos_get_node` only for the nodes whose full note or identity
+data is needed.
 
 ## Relations
 
