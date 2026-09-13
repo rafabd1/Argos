@@ -80,8 +80,8 @@ argos export obsidian --root C:\path\to\target
 ```
 
 Argos stores target knowledge in `.argos/knowledge.sqlite`. The default
-Obsidian export is `.argos/obsidian/`. Normal Argos operations refresh it when
-the configured interval has elapsed. Use
+Obsidian vault is `.argos/obsidian/<config-name>/`. Normal Argos operations
+refresh it when the configured interval has elapsed. Use
 `argos obsidian sync status|refresh|disable` to inspect, force, or disable it.
 The projection emits each directed relation once, keeps incoming context in the
 note without duplicating graph links, and provides `Argos Explorer.base` for

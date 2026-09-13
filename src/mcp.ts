@@ -287,7 +287,7 @@ const tools: ToolDefinition[] = [
     description: "Export one Markdown note per canonical node, one graph link per directed relation, a compact index, and an Obsidian Bases explorer. Pruning removes only files recorded in the prior Argos export manifest.",
     inputSchema: schema({
       root: rootProperty,
-      output: optionalStringProp("Output vault path. Defaults to <root>/.argos/obsidian."),
+      output: optionalStringProp("Output vault path. Defaults to <root>/.argos/obsidian/<config-name>."),
       prune: booleanProp("Remove stale Argos-generated files listed in the previous manifest.")
     }, ["root"]),
     handler: ({ root, output, prune }) => withDb(rootValue(root), (db) => exportObsidian(db, maybeString(output), prune === true), false)
@@ -299,7 +299,7 @@ const tools: ToolDefinition[] = [
     inputSchema: schema({
       root: rootProperty,
       action: enumProp(["status", "enable", "refresh", "disable"], "Sync action."),
-      output: optionalStringProp("Optional vault path used by enable."),
+      output: optionalStringProp("Optional vault path used by enable. Omit it to retain the configured destination; fresh targets use <root>/.argos/obsidian/<config-name>."),
       intervalSeconds: integerProp("Seconds between change checks and exports.", 1, 86_400),
       prune: booleanProp("Remove unchanged stale generated files during each export.")
     }, ["root", "action"]),

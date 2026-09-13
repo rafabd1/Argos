@@ -4,7 +4,8 @@ import path from "node:path";
 import { ArgosDb } from "./db";
 import { withArgosFileLock } from "./locked-sqlite";
 import { exportObsidian, type ObsidianExportResult } from "./obsidian";
-import { knowledgePath, obsidianSyncStatePath, writeFileAtomic } from "./paths";
+import { defaultVaultPath, knowledgePath, obsidianSyncStatePath, writeFileAtomic } from "./paths";
+import { readConfig } from "./vocabulary";
 
 interface StoredObsidianSyncState {
   formatVersion: 1;
@@ -171,7 +172,7 @@ function completeClaimedExport(root: string, claim: ClaimedExport): void {
 }
 
 function readStoredState(root: string): StoredObsidianSyncState {
-  const fallback = defaultState();
+  const fallback = defaultState(root);
   try {
     const parsed = JSON.parse(fs.readFileSync(obsidianSyncStatePath(root), "utf8")) as Partial<StoredObsidianSyncState> & { root?: unknown };
     if (parsed.formatVersion !== 1) return fallback;
@@ -192,11 +193,11 @@ function readStoredState(root: string): StoredObsidianSyncState {
   }
 }
 
-function defaultState(): StoredObsidianSyncState {
+function defaultState(root: string): StoredObsidianSyncState {
   return {
     formatVersion: 1,
     enabled: true,
-    output: ".argos/obsidian",
+    output: defaultOutputForStorage(root),
     intervalSeconds: boundedInterval(Number(process.env.ARGOS_OBSIDIAN_SYNC_INTERVAL_SECONDS ?? DEFAULT_INTERVAL_SECONDS)),
     prune: true,
     attemptToken: null,
@@ -246,10 +247,15 @@ function transientErrorStatus(root: string, error: unknown): ObsidianSyncStatus 
 }
 
 function normalizeStoredOutput(root: string, value: unknown, formerRoot: unknown): string {
-  if (typeof value !== "string" || !value.trim()) return defaultState().output;
+  if (typeof value !== "string" || !value.trim()) return defaultOutputForStorage(root);
   if (!path.isAbsolute(value)) return toPortablePath(portableRelativePath(value));
   const base = typeof formerRoot === "string" && formerRoot.trim() ? path.resolve(formerRoot) : root;
   return isInside(base, value) ? toPortablePath(path.relative(base, path.resolve(value)) || ".") : path.resolve(value);
+}
+
+function defaultOutputForStorage(root: string): string {
+  const name = readConfig(root).name;
+  return toPortablePath(path.relative(root, defaultVaultPath(root, name)));
 }
 
 function outputForStorage(root: string, value: string): string {

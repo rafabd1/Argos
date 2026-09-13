@@ -117,7 +117,8 @@ argos obsidian sync refresh --root C:\path\to\target
 argos obsidian sync disable --root C:\path\to\target
 ```
 
-The default output is `<root>/.argos/obsidian`. Every normal Argos operation
+The default output is `<root>/.argos/obsidian/<config-name>`. Invalid filesystem
+characters are replaced only in the folder name. Every normal Argos operation
 checks whether the graph changed and whether the 30-second default interval has
 elapsed. A due export runs before that command returns and uses safe pruning.
 `refresh` forces it immediately. A manual disable remains in effect for that
@@ -132,6 +133,9 @@ and embeds filtered Bases views without linking every note to a central file.
 The state contains no persistent process or fixed workspace root. Internal
 vault paths follow the `root` passed by the current tool after a move or copy.
 External custom vault paths remain unchanged.
+
+Existing sync destinations remain unchanged. Set `--out` explicitly when an
+existing vault should move to the named layout.
 
 `--prune` on a manual export removes old generated
 note filenames after renames. It only removes paths recorded in the Argos

@@ -30,7 +30,7 @@ const RETIRED_GENERATED_FILES = new Set(["Argos Knowledge Graph.canvas"]);
 const LEGACY_EXPORT_FILES = ["Argos Knowledge Graph.canvas", "Argos Knowledge Graph.md"];
 
 export function exportObsidian(db: ArgosDb, outputInput?: string, prune = false): ObsidianExportResult {
-  const output = path.resolve(outputInput ?? defaultVaultPath(db.root));
+  const output = path.resolve(outputInput ?? defaultVaultPath(db.root, db.config.name));
   ensureDir(output);
   return withArgosFileLock(`${output}.argos-export-lock`, () => exportObsidianLocked(db, output, prune));
 }
