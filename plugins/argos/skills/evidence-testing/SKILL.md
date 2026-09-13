@@ -7,6 +7,8 @@ description: Design and record exact security tests that separate observation fr
 
 Test the proposition that would change the decision. Keep the result tied to its exact path and conditions.
 
+Record only durable target knowledge in Argos. Keep run progress, harness operations, task state, and tool issues outside the graph.
+
 ## Build A Decisive Test
 
 Identify the attacker-controlled input, target version, normal configuration, entry point, state, sink, and observable result. Add negative controls that distinguish the suspected mechanism from a nearby expected behavior.
@@ -21,6 +23,6 @@ A successful normal-path check does not settle alternate paths. A failed payload
 
 ## Update Instead Of Accumulating
 
-Reuse one canonical test node for the same scenario. Update it when rerun against a new version or condition; Argos keeps the prior revision. Create a separate test node when the scenario has a different identity or can reach a different conclusion.
+Reuse one canonical test node for the same scenario. Update its current body when rerun against a new version or condition; replaced text is discarded. Create a separate test node when the scenario has a different identity or can reach a different conclusion.
 
 After each material result, reopen the relevant map. Update any hypothesis whose premise changed. Adding test scope after its conclusion should not require recreating an existing evidence edge; Argos reopens conclusions when technical premises change, not because related test links were written in a different order.

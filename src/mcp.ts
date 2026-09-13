@@ -11,6 +11,7 @@ import {
 } from "./obsidian-sync";
 import { doctorOpenCodeSupport, installOpenCodeSupport } from "./opencode";
 import { resolveTargetRoot } from "./paths";
+import type { NodeListItem, NodeListPage, NodeSummary } from "./types";
 import { addVocabularyType } from "./vocabulary";
 import { packageVersion } from "./version";
 
@@ -33,6 +34,10 @@ interface ToolDefinition {
 }
 
 const rootProperty = stringProp("Absolute target workspace root. Argos stores the shared graph in <root>/.argos.");
+const NODE_LIST_DEFAULT_LIMIT = 20;
+const NODE_LIST_MAX_LIMIT = 100;
+const NODE_LIST_MAX_PAYLOAD_BYTES = 8 * 1024;
+const NODE_LIST_ALIAS_LIMIT = 5;
 
 const tools: ToolDefinition[] = [
   {
@@ -77,7 +82,7 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_create_node",
     title: "Create Canonical Node",
-    description: "Create one canonical note for an independently existing current item. Update an existing node when knowledge, version, payload, or proof changes; internal revisions preserve history. Exact identities resolve to the existing node, and strong ambiguous matches require explicit distinctFrom acknowledgement.",
+    description: "Create one canonical note for an independently existing current target item. Never store campaign goals, work logs, task state, messages, tool issues, or other operational records as nodes. Update an existing node when its knowledge changes. Exact identities resolve to the existing node, and strong ambiguous matches require explicit distinctFrom acknowledgement.",
     inputSchema: schema({
       root: rootProperty,
       type: stringProp("Node type."),
@@ -97,26 +102,39 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_update_node",
     title: "Update Canonical Node",
-    description: "Bring the canonical Markdown note up to date. Use this when the same item's interpretation, version, payload, or proof changes. Argos preserves prior content in internal history and refreshes updatedAt only when the note changes.",
+    description: "Replace, extend, or apply ordered exact edits to the current canonical Markdown note. Exact edits change small sections without resending the full body and fail atomically unless each oldText matches once. Replaced content is discarded; use replace whenever old text is no longer current. updatedAt changes only when the note changes.",
     inputSchema: schema({
       root: rootProperty,
       id: stringProp("Canonical node ID."),
       title: optionalStringProp("Replacement title. The old title becomes an alias."),
       content: optionalStringProp("Free-form Markdown content."),
       aliases: stringArrayProp("Replacement aliases when supplied."),
-      mode: enumProp(["replace", "append"], "Replace or append content.")
+      mode: enumProp(["replace", "append"], "Replace or append content."),
+      edits: nodeTextEditsProp("Ordered exact text edits. Each oldText must match exactly once when its edit is applied; newText may be empty.")
     }, ["root", "id"]),
-    handler: ({ root, id, title, content, aliases, mode }) => withDb(rootValue(root), (db) => db.updateNode(stringValue(id), {
+    handler: ({ root, id, title, content, aliases, mode, edits }) => withDb(rootValue(root), (db) => db.updateNode(stringValue(id), {
       title: maybeString(title),
       content: maybeString(content),
       aliases: aliases === undefined ? undefined : stringArray(aliases),
-      mode: mode === undefined ? undefined : enumValue(mode, ["replace", "append"])
+      mode: mode === undefined ? undefined : enumValue(mode, ["replace", "append"]),
+      edits: edits === undefined ? undefined : nodeTextEdits(edits)
     }))
+  },
+  {
+    name: "argos_remove_node",
+    title: "Remove Erroneous Node",
+    description: "Permanently remove a node that should never have entered the target knowledge map, such as a campaign log or runtime record. This also removes its relations, suggestions, and retired-ID redirects. Use update for stale or corrected target knowledge; removal keeps no history and never infers intent from prose. The reason is returned for confirmation but is not stored as graph data.",
+    inputSchema: schema({
+      root: rootProperty,
+      id: stringProp("Canonical node ID. Redirected IDs are rejected."),
+      reason: stringProp("Short reason this item is not durable target knowledge.")
+    }, ["root", "id", "reason"]),
+    handler: ({ root, id, reason }) => withDb(rootValue(root), (db) => db.removeNode(stringValue(id), stringValue(reason)))
   },
   {
     name: "argos_merge_nodes",
     title: "Merge Duplicate Nodes",
-    description: "Consolidate two reviewed duplicate identities into one canonical node. The caller supplies the final Markdown; Argos preserves aliases and history, rewires graph relations and suggestions, and redirects the retired ID without inferring any conclusion from prose.",
+    description: "Consolidate two reviewed duplicate identities into one canonical node. The caller supplies the final current Markdown; Argos keeps aliases, rewires graph relations and suggestions, redirects the retired ID, and discards the former bodies without inferring any conclusion from prose.",
     inputSchema: schema({
       root: rootProperty,
       sourceId: stringProp("Duplicate node to retire."),
@@ -136,7 +154,7 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_get_node",
     title: "Read Canonical Node",
-    description: "Read a complete note, its age, incoming and outgoing relations, superseding nodes, and revision count.",
+    description: "Read a complete current note, its age, incoming and outgoing relations, and superseding nodes.",
     inputSchema: schema({
       root: rootProperty,
       id: stringProp("Node ID."),
@@ -147,14 +165,19 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_list_nodes",
     title: "List Argos Nodes",
-    description: "List compact canonical notes, newest first.",
+    description: "List compact canonical notes, newest first, in an output-bounded page. Follow nextOffset while hasMore is true; use argos_get_node for a complete note.",
     inputSchema: schema({
       root: rootProperty,
       type: optionalStringProp("Optional node type."),
-      limit: integerProp("Page size.", 1, 500),
+      limit: integerProp(`Requested page size. Defaults to ${NODE_LIST_DEFAULT_LIMIT}; output may contain fewer records when the payload budget is reached.`, 1, NODE_LIST_MAX_LIMIT),
       offset: integerProp("Pagination offset.", 0, 1_000_000)
     }, ["root"]),
-    handler: ({ root, type, limit, offset }) => withDb(rootValue(root), (db) => db.listNodes({ type: maybeString(type), limit: optionalNumber(limit), offset: optionalNumber(offset) }))
+    handler: ({ root, type, limit, offset }) => withDb(rootValue(root), (db) => listNodePage(
+      db,
+      maybeString(type),
+      optionalNumber(limit) ?? NODE_LIST_DEFAULT_LIMIT,
+      optionalNumber(offset) ?? 0
+    ))
   },
   {
     name: "argos_inspect_node",
@@ -273,13 +296,6 @@ const tools: ToolDefinition[] = [
     description: "List notes older than a threshold. Age invites revalidation and never proves that a note is wrong.",
     inputSchema: schema({ root: rootProperty, ageDays: integerProp("Minimum age in days.", 1, 100_000), limit: integerProp("Maximum results.", 1, 1000) }, ["root"]),
     handler: ({ root, ageDays, limit }) => withDb(rootValue(root), (db) => db.stale(optionalNumber(ageDays), optionalNumber(limit) ?? 100))
-  },
-  {
-    name: "argos_node_history",
-    title: "Read Node History",
-    description: "Read prior internal revisions of one canonical note without creating duplicate graph nodes.",
-    inputSchema: schema({ root: rootProperty, id: stringProp("Node ID."), limit: integerProp("Maximum revisions.", 1, 500) }, ["root", "id"]),
-    handler: ({ root, id, limit }) => withDb(rootValue(root), (db) => db.history(stringValue(id), optionalNumber(limit) ?? 50))
   },
   {
     name: "argos_export_obsidian",
@@ -425,8 +441,59 @@ function statusWithSync(root: string): unknown {
 function toolResult(value: unknown): JsonObject {
   const structuredContent = isObject(value) ? value : { result: value };
   return {
-    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+    content: [{ type: "text", text: JSON.stringify(value) }],
     structuredContent
+  };
+}
+
+function listNodePage(db: ArgosDb, type: string | undefined, limit: number, offset: number): NodeListPage {
+  const candidates = db.listNodes({ type, limit: limit + 1, offset });
+  const requested = candidates.slice(0, limit).map(compactNodeListItem);
+  const nodes: NodeListItem[] = [];
+  let truncatedByBudget = false;
+
+  for (const node of requested) {
+    const candidateNodes = [...nodes, node];
+    const candidatePage = nodeListPageRecord(candidateNodes, limit, offset, candidates.length, false);
+    if (Buffer.byteLength(JSON.stringify(candidatePage), "utf8") > NODE_LIST_MAX_PAYLOAD_BYTES) {
+      truncatedByBudget = true;
+      break;
+    }
+    nodes.push(node);
+  }
+
+  if (requested.length > 0 && nodes.length === 0) {
+    throw new Error("A compact node summary exceeded the MCP list payload budget; read the node directly with argos_get_node");
+  }
+  return nodeListPageRecord(nodes, limit, offset, candidates.length, truncatedByBudget);
+}
+
+function nodeListPageRecord(
+  nodes: NodeListItem[],
+  limit: number,
+  offset: number,
+  candidateCount: number,
+  truncatedByBudget: boolean
+): NodeListPage {
+  const hasMore = candidateCount > nodes.length;
+  return {
+    nodes,
+    returned: nodes.length,
+    limit,
+    offset,
+    hasMore,
+    nextOffset: hasMore ? offset + nodes.length : null,
+    truncatedByBudget,
+    maxPayloadBytes: NODE_LIST_MAX_PAYLOAD_BYTES
+  };
+}
+
+function compactNodeListItem(node: NodeSummary): NodeListItem {
+  return {
+    ...node,
+    aliases: node.aliases.slice(0, NODE_LIST_ALIAS_LIMIT),
+    aliasCount: node.aliases.length,
+    aliasesTruncated: node.aliases.length > NODE_LIST_ALIAS_LIMIT
   };
 }
 
@@ -484,6 +551,24 @@ function stringArrayProp(description: string): JsonObject {
   return { type: "array", items: { type: "string", minLength: 1 }, description };
 }
 
+function nodeTextEditsProp(description: string): JsonObject {
+  return {
+    type: "array",
+    minItems: 1,
+    maxItems: 100,
+    description,
+    items: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        oldText: { type: "string", minLength: 1, description: "Exact current text to replace." },
+        newText: { type: "string", description: "Replacement text. Use an empty string to delete the matched text." }
+      },
+      required: ["oldText", "newText"]
+    }
+  };
+}
+
 function enumProp(values: readonly string[], description: string): JsonObject {
   return { type: "string", enum: values, description };
 }
@@ -509,6 +594,20 @@ function stringArray(value: unknown): string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new Error("Expected an array of strings");
   return value as string[];
+}
+
+function nodeTextEdits(value: unknown): Array<{ oldText: string; newText: string }> {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 100) {
+    throw new Error("Expected 1 to 100 exact text edits");
+  }
+  return value.map((item, index) => {
+    if (!isObject(item)) throw new Error(`Exact text edit ${index + 1} must be an object`);
+    const unknown = Object.keys(item).filter((key) => key !== "oldText" && key !== "newText");
+    if (unknown.length > 0) throw new Error(`Unknown exact text edit field: ${unknown[0]}`);
+    if (typeof item.oldText !== "string" || !item.oldText) throw new Error(`Exact text edit ${index + 1} requires non-empty oldText`);
+    if (typeof item.newText !== "string") throw new Error(`Exact text edit ${index + 1} requires string newText`);
+    return { oldText: item.oldText, newText: item.newText };
+  });
 }
 
 function optionalNumber(value: unknown): number | undefined {

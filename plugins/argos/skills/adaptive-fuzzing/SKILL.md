@@ -7,6 +7,8 @@ description: Use feedback-led fuzzing to learn a specific parser, protocol, stat
 
 Fuzz to learn the boundary, then sharpen the input family around what changed.
 
+Record only durable target knowledge in Argos. Keep run progress, task state, tool issues, and harness operations outside the graph.
+
 ## Establish The Model
 
 Map the input origin, transformations, parser layers, state, sink, and observable signals. Start with valid seeds and one variable at a time. Choose oracles that reveal semantic differences, not only crashes.

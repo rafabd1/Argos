@@ -21,7 +21,7 @@ const env = {
 
 try {
   const version = run("--version");
-  assert.equal(version.version, "0.1.3");
+  assert.equal(version.version, "0.1.4");
   const initialized = run("init", "--root", target, "--name", "Smoke Target");
   assert.equal(initialized.initialized, true);
   const namedDefaultExport = run("export", "obsidian", "--root", target);
@@ -90,18 +90,74 @@ try {
   const search = run("search", "--root", target, "--query", "entry.path build worker", "--depth", "2");
   assert(search.some((hit) => hit.node.publicId === data.publicId));
 
-  const beforeUpdate = run("node", "get", "--root", target, "--id", hypothesis.publicId);
   const updated = run("node", "update", "--root", target, "--id", hypothesis.publicId, "--mode", "append", "--content", "Reopen if another archive producer bypasses normalization.");
   assert(updated.content.includes("Reopen"));
-  const history = run("history", "--root", target, "--id", hypothesis.publicId);
-  assert.equal(history.length, 1);
-  assert.equal(history[0].content, beforeUpdate.node.content);
+  const editsFile = path.join(temp, "node-edits.json");
+  fs.writeFileSync(editsFile, JSON.stringify([
+    {
+      oldText: "Open until the path and execution boundary are tested.",
+      newText: "Testing remains open until the path and the execution boundary are tested."
+    },
+    {
+      oldText: "Reopen if another archive producer bypasses normalization.",
+      newText: "Recheck if another archive producer bypasses normalization."
+    }
+  ]));
+  const edited = run("node", "update", "--root", target, "--id", hypothesis.publicId, "--edits-file", editsFile);
+  assert(edited.content.includes("Testing remains open"));
+  assert(edited.content.includes("Recheck if another archive producer"));
+  const directlyEdited = run("node", "update", "--root", target, "--id", hypothesis.publicId, "--old-text", "Testing remains open", "--new-text", "Testing is still open");
+  assert(directlyEdited.content.includes("Testing is still open"));
+  const missingReplacement = runFailure("node", "update", "--root", target, "--id", hypothesis.publicId, "--old-text", "Testing is still open", "--new-text");
+  assert(missingReplacement.includes("Missing --new-text value"));
+
+  const beforeFailedEdit = run("node", "get", "--root", target, "--id", hypothesis.publicId).node;
+  fs.writeFileSync(editsFile, JSON.stringify([
+    { oldText: "Testing is still open", newText: "This first edit must roll back" },
+    { oldText: "missing exact text", newText: "must fail" }
+  ]));
+  const missingEdit = runFailure("node", "update", "--root", target, "--id", hypothesis.publicId, "--edits-file", editsFile);
+  assert(missingEdit.includes("expected one oldText match but found 0"));
+  const afterFailedEdit = run("node", "get", "--root", target, "--id", hypothesis.publicId).node;
+  assert.equal(afterFailedEdit.content, beforeFailedEdit.content);
+  assert.equal(afterFailedEdit.updatedAt, beforeFailedEdit.updatedAt);
+
+  fs.writeFileSync(editsFile, JSON.stringify([{ oldText: "the ", newText: "a " }]));
+  const ambiguousEdit = runFailure("node", "update", "--root", target, "--id", hypothesis.publicId, "--edits-file", editsFile);
+  assert(ambiguousEdit.includes("expected one oldText match but found 2"));
+
+  const deletedText = run("node", "update", "--root", target, "--id", hypothesis.publicId, "--old-text", "\n\nRecheck if another archive producer bypasses normalization.", "--new-text=");
+  assert.equal(deletedText.content.includes("Recheck if another archive producer"), false);
   const noFields = runFailure("node", "update", "--root", target, "--id", hypothesis.publicId);
-  assert(noFields.includes("requires a title, content, or aliases change"));
+  assert(noFields.includes("requires a title, content, aliases, or exact text edits"));
   const beforeNoop = run("node", "get", "--root", target, "--id", hypothesis.publicId);
   const noop = run("node", "update", "--root", target, "--id", hypothesis.publicId, "--content", beforeNoop.node.content);
   assert.equal(noop.updatedAt, beforeNoop.node.updatedAt);
-  assert.equal(run("history", "--root", target, "--id", hypothesis.publicId).length, 1);
+  assert(runFailure("history", "--root", target).includes("Unknown command: history"));
+
+  const legacyDb = new DatabaseSync(path.join(target, ".argos", "knowledge.sqlite"));
+  legacyDb.exec(`
+    CREATE TABLE node_revisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      aliases_json TEXT NOT NULL,
+      content TEXT NOT NULL,
+      replaced_at TEXT NOT NULL,
+      previous_updated_at TEXT NOT NULL
+    )
+  `);
+  legacyDb.prepare(
+    "INSERT INTO node_revisions(node_id, title, aliases_json, content, replaced_at, previous_updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(hypothesis.id, hypothesis.title, "[]", "Former body", new Date().toISOString(), hypothesis.updatedAt);
+  legacyDb.prepare("UPDATE metadata SET value = '2' WHERE key = 'schema_version'").run();
+  legacyDb.close();
+  const migratedStatus = run("status", "--root", target);
+  assert.equal(migratedStatus.schemaVersion, 3);
+  assert.equal("revisions" in migratedStatus.counts, false);
+  const migratedDb = new DatabaseSync(path.join(target, ".argos", "knowledge.sqlite"));
+  assert.equal(migratedDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'node_revisions'").get(), undefined);
+  migratedDb.close();
   const invalidInteger = runFailure("map", "--root", target, "--id", hypothesis.publicId, "--limit", "2.5");
   assert(invalidInteger.includes("--limit must be an integer"));
   const conflictingReference = runFailure("node", "get", hypothesis.publicId, "--root", target, "--id", sinkA.publicId);
@@ -237,9 +293,15 @@ try {
   assert.equal(redirectedContext.node.publicId, mergeDestination.publicId);
   const redirectedEdge = link(mergeSource.publicId, "calls", sinkA.publicId);
   assert.equal(redirectedEdge.fromId, mergeDestination.publicId);
-  const mergedHistory = run("history", "--root", target, "--id", mergeDestination.publicId);
-  assert(mergedHistory.some((revision) => revision.title === "Legacy archive dispatcher"));
   assert.equal(run("node", "list", "--root", target, "--limit", "100").some((node) => node.publicId === mergeSource.publicId), false);
+  const redirectedRemoval = runFailure("node", "remove", "--root", target, "--id", mergeSource.publicId, "--reason", "Retired ID must not delete its canonical node implicitly");
+  assert(redirectedRemoval.includes(`resolves to ${mergeDestination.publicId}`));
+  const removedMergedNode = run("node", "remove", "--root", target, "--id", mergeDestination.publicId, "--reason", "Synthetic smoke-test identity no longer belongs in the map");
+  assert.equal(removedMergedNode.removed.publicId, mergeDestination.publicId);
+  assert.equal(removedMergedNode.removedRedirects, 1);
+  assert(removedMergedNode.removedEdges >= 1);
+  assert(runFailure("node", "get", "--root", target, "--id", mergeDestination.publicId).includes("was not found"));
+  assert(runFailure("node", "get", "--root", target, "--id", mergeSource.publicId).includes("was not found"));
 
   const crossTypeComponent = create("component", "Shared dispatch operation", "Owns the dispatch implementation.");
   const crossTypeReview = runReview("node", "create", "--root", target, "--type", "sink", "--title", "Shared dispatch operation", "--content", "Same name, different proposed type.");

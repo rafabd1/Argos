@@ -18,8 +18,8 @@ Default node types describe identity, not a body schema:
 - `test`: one reusable test scenario and its current result.
 - `finding`: a validated vulnerability identity.
 - `intel`: external facts, expected behavior, fixes, and timelines.
-- `artifact`: a PoC, harness, trace, sample, or other retained object.
-- `note`: useful knowledge that has no better stable identity yet.
+- `artifact`: target evidence such as a PoC, harness, trace, sample, report, or reproducible output.
+- `note`: durable target knowledge that has no better stable identity yet.
 
 Extend the vocabulary only when the new type carries a stable meaning that cannot be expressed by these types.
 
@@ -44,9 +44,11 @@ Technical chain traversal uses the recorded direction of `exposes`, `calls`, `fl
 
 Titles identify the real item. Aliases help resolve symbols, paths, old names, and labels. Exact title or alias matches return the canonical node. Strong but ambiguous matches stop creation until the caller reviews them and passes `distinctFrom` for items confirmed to be different.
 
-The visible graph represents current knowledge. When the understanding, version, payload, or proof for an item changes, update its canonical node and let internal revisions retain the former text. Do not preserve an old representation as a generic node or create a new identity only because historical tests need context. Put that scope in the test or evidence node. Create another node only for an independently existing current item.
+The graph represents current target knowledge. When the understanding, version, payload, or proof for an item changes, update its canonical node. Replaced text is discarded. Do not preserve an old representation as a generic node or create a new identity only because earlier tests need context. Create another node only for an independently existing current item.
 
-If later evidence proves that two nodes are the same item, merge the duplicate into the chosen canonical node with an explicitly reviewed body. The retired ID remains resolvable; its history and graph connections move to the canonical identity.
+If later evidence proves that two nodes are the same item, merge the duplicate into the chosen canonical node with an explicitly reviewed body. The retired ID remains resolvable and its graph connections move to the canonical identity.
+
+Campaign plans, progress logs, tool issues, messages, and runtime state are not target knowledge. Keep them outside Argos. Remove an accidental operational node instead of preserving it as history.
 
 ## Suggestions
 

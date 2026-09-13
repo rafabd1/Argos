@@ -63,8 +63,7 @@ class ArgosDb {
             counts: {
                 nodes: count("nodes"),
                 edges: count("edges"),
-                pendingSuggestions: count("link_suggestions", "WHERE status = 'pending'"),
-                revisions: count("node_revisions")
+                pendingSuggestions: count("link_suggestions", "WHERE status = 'pending'")
             },
             nodeTypes: Object.fromEntries(typeRows.map((row) => [String(row.type), Number(row.count)]))
         };
@@ -107,9 +106,13 @@ class ArgosDb {
         return outcome;
     }
     updateNode(reference, input) {
-        if (input.title === undefined && input.content === undefined && input.aliases === undefined) {
-            throw new Error("Node update requires a title, content, or aliases change");
+        if (input.title === undefined && input.content === undefined && input.aliases === undefined && input.edits === undefined) {
+            throw new Error("Node update requires a title, content, aliases, or exact text edits");
         }
+        if (input.content !== undefined && input.edits !== undefined)
+            throw new Error("Use either content or exact text edits in one node update");
+        if (input.mode !== undefined && input.edits !== undefined)
+            throw new Error("Update mode cannot be used with exact text edits");
         let updated;
         this.transaction(() => {
             const current = this.getNode(reference);
@@ -121,25 +124,56 @@ class ArgosDb {
             const normalizedAliases = cleanAliases(aliases, title);
             this.assertIdentityAvailable(title, normalizedAliases, new Set([current.id]), new Set([current.title, ...current.aliases].map(normalizeIdentity)));
             const mode = input.mode ?? "replace";
-            const content = input.content === undefined
-                ? current.content
-                : mode === "append" && input.content.trim().length === 0
+            const content = input.edits !== undefined
+                ? applyExactTextEdits(current.content, input.edits)
+                : input.content === undefined
                     ? current.content
-                    : mode === "append" && current.content.trim().length > 0
-                        ? `${current.content.trimEnd()}\n\n${input.content.trimStart()}`
-                        : input.content;
+                    : mode === "append" && input.content.trim().length === 0
+                        ? current.content
+                        : mode === "append" && current.content.trim().length > 0
+                            ? `${current.content.trimEnd()}\n\n${input.content.trimStart()}`
+                            : input.content;
             if (title === current.title && arraysEqual(normalizedAliases, current.aliases) && content === current.content) {
                 updated = current;
                 return;
             }
             const now = new Date().toISOString();
-            this.db.prepare(`INSERT INTO node_revisions(node_id, title, aliases_json, content, replaced_at, previous_updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`).run(current.id, current.title, JSON.stringify(current.aliases), current.content, now, current.updatedAt);
             this.db.prepare(`UPDATE nodes SET title = ?, normalized_title = ?, aliases_json = ?, content = ?, updated_at = ? WHERE id = ?`).run(title, normalizeIdentity(title), JSON.stringify(normalizedAliases), content, now, current.id);
             this.indexNode(current.id, title, normalizedAliases, content);
             updated = this.getNode(current.id);
         });
         return updated;
+    }
+    removeNode(reference, reasonInput) {
+        const requestedNumericId = parseNodeId(reference);
+        const requestedId = nodePublicId(requestedNumericId);
+        const reason = reasonInput.trim();
+        if (!reason)
+            throw new Error("Node removal requires a reason");
+        if (reason.length > 500)
+            throw new Error("Node removal reason must be at most 500 characters");
+        let result;
+        this.transaction(() => {
+            const canonicalId = this.resolveNodeId(requestedNumericId);
+            if (canonicalId !== requestedNumericId) {
+                throw new Error(`${requestedId} resolves to ${nodePublicId(canonicalId)}; pass the canonical ID explicitly to remove it`);
+            }
+            const current = this.getNode(canonicalId);
+            const removedEdges = this.countWhere("edges", "from_node_id = ? OR to_node_id = ?", canonicalId, canonicalId);
+            const removedSuggestions = this.countWhere("link_suggestions", "from_node_id = ? OR to_node_id = ?", canonicalId, canonicalId);
+            const removedRedirects = this.countWhere("node_redirects", "destination_node_id = ?", canonicalId);
+            this.db.prepare("DELETE FROM node_fts WHERE node_id = ?").run(canonicalId);
+            this.db.prepare("DELETE FROM nodes WHERE id = ?").run(canonicalId);
+            result = {
+                requestedId,
+                removed: summarizeNode(current),
+                removedEdges,
+                removedSuggestions,
+                removedRedirects,
+                reason
+            };
+        });
+        return result;
     }
     getNode(reference) {
         const id = this.resolveNodeId(parseNodeId(reference));
@@ -158,7 +192,6 @@ class ArgosDb {
         const supersededBy = incomingAll
             .filter((edge) => edge.type === "supersedes")
             .map((edge) => summarizeNode(this.getNode(edge.fromId)));
-        const revisionCount = Number(this.db.prepare("SELECT COUNT(*) AS count FROM node_revisions WHERE node_id = ?").get(node.id).count ?? 0);
         return {
             requestedId,
             resolvedFrom: requestedId === node.publicId ? null : requestedId,
@@ -169,8 +202,7 @@ class ArgosDb {
             incomingTotal: incomingAll.length,
             relationLimit,
             relationsTruncated: outgoingAll.length > relationLimit || incomingAll.length > relationLimit,
-            supersededBy,
-            revisionCount
+            supersededBy
         };
     }
     inspect(reference, options = {}) {
@@ -198,10 +230,10 @@ class ArgosDb {
         const offset = boundedInteger(options.offset, 0, 0, 1_000_000);
         if (options.type) {
             const type = (0, vocabulary_1.assertNodeType)(this.config, options.type);
-            return this.db.prepare("SELECT * FROM nodes WHERE type = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?").all(type, limit, offset)
+            return this.db.prepare("SELECT * FROM nodes WHERE type = ? ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?").all(type, limit, offset)
                 .map((row) => summarizeNode(rowToNode(row)));
         }
-        return this.db.prepare("SELECT * FROM nodes ORDER BY updated_at DESC LIMIT ? OFFSET ?").all(limit, offset)
+        return this.db.prepare("SELECT * FROM nodes ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?").all(limit, offset)
             .map((row) => summarizeNode(rowToNode(row)));
     }
     mergeNodes(input) {
@@ -224,11 +256,6 @@ class ArgosDb {
             ], title);
             this.assertIdentityAvailable(title, aliases, new Set([sourceId, destinationId]), new Set());
             const now = new Date().toISOString();
-            this.db.prepare(`INSERT INTO node_revisions(node_id, title, aliases_json, content, replaced_at, previous_updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`).run(destinationId, destination.title, JSON.stringify(destination.aliases), destination.content, now, destination.updatedAt);
-            this.db.prepare("UPDATE node_revisions SET node_id = ? WHERE node_id = ?").run(destinationId, sourceId);
-            this.db.prepare(`INSERT INTO node_revisions(node_id, title, aliases_json, content, replaced_at, previous_updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`).run(destinationId, source.title, JSON.stringify(source.aliases), source.content, now, source.updatedAt);
             let movedEdges = 0;
             let deduplicatedEdges = 0;
             let movedSuggestions = 0;
@@ -874,18 +901,6 @@ class ArgosDb {
         const limit = boundedInteger(limitInput, 100, 1, 1000);
         return this.allNodes().filter((node) => node.ageDays >= threshold).sort((a, b) => b.ageDays - a.ageDays).slice(0, limit).map(summarizeNode);
     }
-    history(reference, limitInput = 50) {
-        const node = this.getNode(reference);
-        const limit = boundedInteger(limitInput, 50, 1, 500);
-        return this.db.prepare("SELECT * FROM node_revisions WHERE node_id = ? ORDER BY id DESC LIMIT ?").all(node.id, limit).map((row) => ({
-            revisionId: Number(row.id),
-            title: String(row.title),
-            aliases: parseStringArray(row.aliases_json),
-            content: String(row.content ?? ""),
-            replacedAt: String(row.replaced_at),
-            previousUpdatedAt: String(row.previous_updated_at)
-        }));
-    }
     getAllEdgeViews() {
         return this.db.prepare(`SELECT e.*, f.title AS from_title, f.type AS from_type, t.title AS to_title, t.type AS to_type
        FROM edges e
@@ -899,7 +914,8 @@ class ArgosDb {
         this.db.exec("PRAGMA busy_timeout = 120000");
     }
     migrate() {
-        this.db.exec(`
+        this.transaction(() => {
+            this.db.exec(`
       CREATE TABLE IF NOT EXISTS metadata (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -915,16 +931,6 @@ class ArgosDb {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         UNIQUE(type, normalized_title)
-      );
-
-      CREATE TABLE IF NOT EXISTS node_revisions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-        title TEXT NOT NULL,
-        aliases_json TEXT NOT NULL,
-        content TEXT NOT NULL,
-        replaced_at TEXT NOT NULL,
-        previous_updated_at TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS node_redirects (
@@ -970,16 +976,22 @@ class ArgosDb {
       CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_node_id);
       CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_node_id);
       CREATE INDEX IF NOT EXISTS idx_suggestions_status ON link_suggestions(status, score DESC);
-    `);
-        this.db.prepare(`
-      INSERT INTO metadata(key, value) VALUES ('schema_version', '2')
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-      WHERE metadata.value <> excluded.value
-    `).run();
+      `);
+            this.db.exec("DROP TABLE IF EXISTS node_revisions");
+            this.db.prepare(`
+        INSERT INTO metadata(key, value) VALUES ('schema_version', '3')
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        WHERE metadata.value <> excluded.value
+      `).run();
+        });
     }
     metadata(key) {
         const row = this.db.prepare("SELECT value FROM metadata WHERE key = ?").get(key);
         return row ? String(row.value) : null;
+    }
+    countWhere(table, where, ...params) {
+        const row = this.db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${where}`).get(...params);
+        return Number(row.count ?? 0);
     }
     transaction(action) {
         this.db.exec("BEGIN IMMEDIATE");
@@ -1204,6 +1216,45 @@ function cleanAliases(values, title) {
 }
 function arraysEqual(left, right) {
     return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+function applyExactTextEdits(content, edits) {
+    if (!Array.isArray(edits) || edits.length === 0)
+        throw new Error("Exact text edits require at least one edit");
+    if (edits.length > 100)
+        throw new Error("A node update accepts at most 100 exact text edits");
+    let updated = content;
+    for (const [index, edit] of edits.entries()) {
+        if (!edit || typeof edit !== "object" || Array.isArray(edit)) {
+            throw new Error(`Exact text edit ${index + 1} must be an object`);
+        }
+        const unknown = Object.keys(edit).filter((key) => key !== "oldText" && key !== "newText");
+        if (unknown.length > 0)
+            throw new Error(`Unknown exact text edit field: ${unknown[0]}`);
+        if (typeof edit.oldText !== "string" || !edit.oldText) {
+            throw new Error(`Exact text edit ${index + 1} requires non-empty oldText`);
+        }
+        if (typeof edit.newText !== "string")
+            throw new Error(`Exact text edit ${index + 1} requires string newText`);
+        const matches = exactOccurrenceCount(updated, edit.oldText);
+        if (matches !== 1) {
+            throw new Error(`Exact text edit ${index + 1} expected one oldText match but found ${matches}`);
+        }
+        const at = updated.indexOf(edit.oldText);
+        updated = `${updated.slice(0, at)}${edit.newText}${updated.slice(at + edit.oldText.length)}`;
+    }
+    return updated;
+}
+function exactOccurrenceCount(content, needle) {
+    let count = 0;
+    let offset = 0;
+    while (offset <= content.length - needle.length) {
+        const at = content.indexOf(needle, offset);
+        if (at === -1)
+            break;
+        count += 1;
+        offset = at + 1;
+    }
+    return count;
 }
 function normalizeIdentity(value) {
     return value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}._:/\\#@-]+/gu, " ").replace(/\s+/g, " ").trim();

@@ -3,14 +3,14 @@
   "owner": {
     "name": "Vyntra Research"
   },
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Argos plugins for connected, evidence-led security research.",
   "plugins": [
     {
       "name": "argos",
       "source": "./plugins/argos",
       "description": "Build and query a connected security knowledge map.",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "author": {
         "name": "Vyntra Research"
       },
