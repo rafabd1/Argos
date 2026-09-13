@@ -20,6 +20,8 @@ Do not load the whole graph. Expand around the current item, then follow only re
 
 Use `inspect` after search when one node is the likely center. It returns the note, local map, coverage gaps, nearby sink paths, and pending suggestions in one bounded call.
 
+At a useful checkpoint, inspect the active hypothesis and its terminal sinks or boundaries again. This catches changed premises without turning Argos into a campaign manager.
+
 ## One Item, One Node
 
 A node represents one real item. The note body is free-form Markdown.
@@ -29,6 +31,7 @@ A node represents one real item. The note body is free-form Markdown.
 - Use aliases for symbols, paths, old names, and common labels.
 - Create a distinct node only when it has an independent identity and can change separately.
 - Link facts instead of repeating them in several notes.
+- Promote a premise from prose to a node when it can be tested, revised, or reused by another conclusion. Do not create a node for every checklist line.
 
 Argos keeps prior note bodies as internal revisions. Do not create a second node as history.
 If two existing nodes are later proven to be the same item, inspect both and use the explicit merge operation with a reviewed consolidated body. Do not leave parallel canonical identities or discard one note's evidence.
@@ -56,11 +59,13 @@ Evidence from one path supports a conclusion about that path and its proven cond
 - A safe result at one stage does not prove safety before or after that stage.
 - A prior discard must be reopened when a linked premise changes.
 
-Record the exact scope in natural prose. Add explicit `supports`, `refutes`, `depends_on`, or `supersedes` links where they help later recovery.
+Record the exact scope in natural prose. Point `tests` to the precise item exercised. Add `supports` or `refutes` only when the observed scope covers that conclusion; a primitive-only test stays linked to the primitive. Use `depends_on` for decisive premises and `supersedes` or `refutes` when new knowledge changes an older conclusion.
+
+When older research becomes relevant again, create or recover only the prior conclusion that affects the current work. Link the new evidence to it explicitly. Do not copy a whole legacy log into the graph or silently treat the old verdict as current.
 
 ## Find Missing Combinations
 
-Use relation suggestions and sink paths as prompts for inspection. They do not become facts until checked.
+Use relation suggestions and sink paths as prompts for inspection. They do not become facts until checked. Sink paths follow edge direction and technical relations; ownership, evidence, and provenance links remain context and cannot manufacture a chain.
 
 The gap engine reports what the map establishes, such as a test linked to only part of a sink's recorded inputs or a boundary linked to some paths but not others. Treat each result as a question to settle in code or a test, never as proof of a vulnerability or proof that an unlisted path exists.
 
@@ -80,6 +85,10 @@ The goal is to expose useful combinations, not to manufacture a chain between un
 Every node reports `updatedAt` and `ageDays`. Age is a reason to verify, not a status judgment.
 
 Recheck old knowledge when the target version, nearby component, upstream dependency, configuration default, or threat model changed. Update the same node and use `supersedes` only when a separate item or conclusion truly replaced another.
+
+## Obsidian Projection
+
+Argos checks the Obsidian projection after normal workspace operations. When the configured interval elapsed, it updates the vault before the operation returns and safely prunes only unchanged files owned by an earlier export. Use sync status to see when the next projection is due and sync refresh to force one now. Disable it only when the user does not want automatic export for that workspace.
 
 ## Useful Knowledge
 

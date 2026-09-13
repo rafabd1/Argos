@@ -53,17 +53,21 @@ argos stale [--age-days <n>] [--limit <n>]
 
 MCP: `argos_add_link`, `argos_remove_link`, `argos_suggest_links`, `argos_review_link_suggestion`, `argos_search`, `argos_inspect_node`, `argos_map`, `argos_find_chains`, `argos_find_gaps`, `argos_list_old_knowledge`.
 
-`inspect` is the normal recovery call after search. It returns the canonical note, a bounded map, objective coverage gaps, nearby sink paths, and pending suggestions without accepting any relation. When `map.truncated` is true, follow `frontierNodeIds` with targeted reads; omitted context is never evidence of absence.
+`inspect` is the normal recovery call after search. It returns the canonical note, a bounded map, objective coverage gaps, directed technical sink paths, separate direct context relations, and pending suggestions without accepting any relation. `chains` remains a compatibility alias of `technicalChains` in this response. When `map.truncated` is true, follow `frontierNodeIds` with targeted reads; omitted context is never evidence of absence.
 
 ## Obsidian
 
 ```text
 argos export obsidian [--out <vault-path>] [--prune]
+argos obsidian sync enable [--out <vault-path>] [--interval-seconds <n>] [--prune true|false]
+argos obsidian sync status
+argos obsidian sync refresh
+argos obsidian sync disable
 ```
 
-MCP: `argos_export_obsidian`.
+MCP: `argos_export_obsidian`, `argos_obsidian_sync`.
 
-The export writes one note per node, an index, generated wikilinks, and an Obsidian Canvas. `--prune` removes only files listed in the previous Argos export manifest.
+The export writes one note per node, an index, generated wikilinks, and an Obsidian Canvas. Each normal Argos operation refreshes a due projection at the 30-second default interval. `refresh` forces it now. A manual disable persists for that workspace until `enable` turns it back on. Internal vault paths follow the current tool root after a move or copy. Pruning removes only unchanged files listed in the previous Argos export manifest.
 
 ## Chimera Setup
 

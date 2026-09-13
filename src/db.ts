@@ -24,6 +24,30 @@ import {
 
 type Row = Record<string, unknown>;
 
+const TECHNICAL_CHAIN_RELATIONS = new Set([
+  "exposes",
+  "calls",
+  "flows_to",
+  "transforms",
+  "reads",
+  "writes",
+  "produces",
+  "consumes",
+  "influences",
+  "crosses",
+  "runs_as",
+  "affects"
+]);
+
+const CHAIN_EXCLUDED_NODE_TYPES = new Set([
+  "target",
+  "test",
+  "finding",
+  "intel",
+  "artifact",
+  "note"
+]);
+
 export interface IdentityCandidate {
   node: NodeSummary;
   score: number;
@@ -272,11 +296,17 @@ export class ArgosDb {
     const pendingSuggestions = (this.db.prepare(
       "SELECT * FROM link_suggestions WHERE status = 'pending' AND (from_node_id = ? OR to_node_id = ?) ORDER BY score DESC, id LIMIT 100"
     ).all(context.node.id, context.node.id) as Row[]).map(rowToSuggestion);
+    const directRelations = uniqueEdges([...context.outgoing, ...context.incoming]);
+    const technicalChains = this.discoverChains(context.node.publicId, options.maxHops ?? 5, options.chainLimit ?? 10);
     return {
       context,
       map: this.map(context.node.publicId, options.depth ?? 2, options.mapLimit ?? 80),
       gaps: this.gaps(context.node.publicId),
-      chains: this.discoverChains(context.node.publicId, options.maxHops ?? 5, options.chainLimit ?? 10),
+      chainMode: "directed_technical",
+      technicalRelations: directRelations.filter((edge) => TECHNICAL_CHAIN_RELATIONS.has(edge.type)),
+      contextRelations: directRelations.filter((edge) => !TECHNICAL_CHAIN_RELATIONS.has(edge.type)),
+      technicalChains,
+      chains: technicalChains,
       pendingSuggestions,
       pendingSuggestionCount: suggestionCount,
       pendingSuggestionsTruncated: suggestionCount > pendingSuggestions.length
@@ -644,20 +674,23 @@ export class ArgosDb {
     const limit = boundedInteger(limitInput, 20, 1, 100);
     const edges = this.getAllEdgeViews();
     const nodes = new Map(this.allNodes().map((node) => [node.publicId, node]));
-    const adjacency = new Map<string, Array<{ nodeId: string; edge: EdgeView }>>();
+    const adjacency = new Map<string, Array<{ nodeId: string; edge: EdgeView; technical: boolean }>>();
     for (const edge of edges) {
-      pushAdjacency(adjacency, edge.fromId, edge.toId, edge);
-      pushAdjacency(adjacency, edge.toId, edge.fromId, edge);
+      if (TECHNICAL_CHAIN_RELATIONS.has(edge.type)) {
+        pushChainAdjacency(adjacency, edge.fromId, edge.toId, edge, true);
+      } else if (start.type === "hypothesis" && edge.type === "depends_on" && edge.fromId === start.publicId) {
+        pushChainAdjacency(adjacency, edge.fromId, edge.toId, edge, false);
+      }
     }
     const results: ChainPath[] = [];
-    const queue: Array<{ ids: string[]; pathEdges: EdgeView[] }> = [{ ids: [start.publicId], pathEdges: [] }];
+    const queue: Array<{ ids: string[]; pathEdges: EdgeView[]; technicalEdges: number }> = [{ ids: [start.publicId], pathEdges: [], technicalEdges: 0 }];
     let explored = 0;
     while (queue.length > 0 && explored < 10_000 && results.length < limit) {
       explored += 1;
       const current = queue.shift()!;
       const last = current.ids[current.ids.length - 1];
       const hops = current.pathEdges.length;
-      if (hops > 0 && nodes.get(last)?.type === "sink") {
+      if (hops > 0 && current.technicalEdges > 0 && nodes.get(last)?.type === "sink") {
         const pathNodes = current.ids.map((id) => summarizeNode(nodes.get(id)!));
         results.push({
           nodes: pathNodes,
@@ -670,7 +703,14 @@ export class ArgosDb {
       if (hops >= maxHops) continue;
       for (const neighbor of adjacency.get(last) ?? []) {
         if (current.ids.includes(neighbor.nodeId)) continue;
-        queue.push({ ids: [...current.ids, neighbor.nodeId], pathEdges: [...current.pathEdges, neighbor.edge] });
+        if (!neighbor.technical && hops > 0) continue;
+        const neighborNode = nodes.get(neighbor.nodeId);
+        if (!neighborNode || (neighborNode.type !== "sink" && CHAIN_EXCLUDED_NODE_TYPES.has(neighborNode.type))) continue;
+        queue.push({
+          ids: [...current.ids, neighbor.nodeId],
+          pathEdges: [...current.pathEdges, neighbor.edge],
+          technicalEdges: current.technicalEdges + (neighbor.technical ? 1 : 0)
+        });
       }
     }
     return results.sort((a, b) => a.hopCount - b.hopCount || a.oldestAgeDays - b.oldestAgeDays);
@@ -757,7 +797,9 @@ export class ArgosDb {
   gaps(reference?: string | number, ageDaysInput?: number): KnowledgeGap[] {
     const ageThreshold = boundedInteger(ageDaysInput, this.config.ageNoticeDays, 1, 100_000);
     const nodeList = this.allNodes();
-    const nodes = reference === undefined ? nodeList.filter((node) => node.type === "sink" || node.type === "hypothesis") : [this.getNode(reference)];
+    const nodes = reference === undefined
+      ? nodeList.filter((node) => node.type === "sink" || node.type === "hypothesis" || node.type === "behavior")
+      : [this.getNode(reference)];
     const edges = this.getAllEdgeViews();
     const allNodes = new Map(nodeList.map((node) => [node.publicId, node]));
     const pending = this.listSuggestions("pending", 500);
@@ -784,9 +826,8 @@ export class ArgosDb {
       }
       if (node.type === "sink") {
         const testNodes = relatedEdges
-          .filter((edge) => edge.type === "tests")
-          .map((edge) => edge.fromId === node.publicId ? edge.toId : edge.fromId)
-          .filter((id) => allNodes.get(id)?.type === "test");
+          .filter((edge) => edge.type === "tests" && edge.toId === node.publicId && allNodes.get(edge.fromId)?.type === "test")
+          .map((edge) => edge.fromId);
         if (testNodes.length === 0) gaps.push(gap("sink_without_test", node, "No test node is linked to this sink.", []));
         const flowNeighbors = relatedEdges.filter((edge) => ["flows_to", "produces", "consumes", "reads", "writes", "calls", "influences"].includes(edge.type));
         if (flowNeighbors.length === 0) gaps.push(gap("sink_without_flow_context", node, "No data, state, producer, consumer, or call-flow relation is linked to this sink.", []));
@@ -794,9 +835,7 @@ export class ArgosDb {
           .filter((edge) => edge.toId === node.publicId && ["flows_to", "produces", "writes", "calls", "transforms", "influences"].includes(edge.type))
           .map((edge) => edge.fromId))];
         if (testNodes.length > 0 && upstreamIds.length > 1) {
-          const testedTargets = new Set(testNodes.flatMap((testId) => edges
-            .filter((edge) => edge.type === "tests" && (edge.fromId === testId || edge.toId === testId))
-            .map((edge) => edge.fromId === testId ? edge.toId : edge.fromId)));
+          const testedTargets = new Set(testNodes.flatMap((testId) => testTargetIds(testId, edges, allNodes)));
           const uncovered = upstreamIds.filter((id) => !testedTargets.has(id));
           if (uncovered.length > 0) {
             gaps.push(gap(
@@ -825,13 +864,13 @@ export class ArgosDb {
             }
           }
         }
-        if (!hasNodeTypeWithin(node.publicId, "principal", 2, edges, allNodes)) {
+        if (!hasNodeTypeWithinRelations(node.publicId, "principal", 2, edges, allNodes, SINK_CONTEXT_RELATIONS)) {
           gaps.push(gap("sink_without_authority_context", node, "No principal is recorded within two graph edges of this sink.", []));
         }
-        if (!hasNodeTypeWithin(node.publicId, "state", 2, edges, allNodes)) {
+        if (!hasNodeTypeWithinRelations(node.publicId, "state", 2, edges, allNodes, SINK_CONTEXT_RELATIONS)) {
           gaps.push(gap("sink_without_state_context", node, "No state or lifecycle node is recorded within two graph edges of this sink.", []));
         }
-        const nearbyBoundaries = nodeIdsOfTypeWithin(node.publicId, "boundary", 2, edges, allNodes);
+        const nearbyBoundaries = nodeIdsOfTypeWithinRelations(node.publicId, "boundary", 2, edges, allNodes, SINK_CONTEXT_RELATIONS);
         const applicableGuarantees = edges.filter((edge) => {
           if (edge.type !== "guards" || allNodes.get(edge.fromId)?.type !== "guarantee") return false;
           return edge.toId === node.publicId || nearbyBoundaries.includes(edge.toId);
@@ -844,11 +883,109 @@ export class ArgosDb {
           gaps.push(gap("related_sink_path", node, `Another sink is reachable through ${chain.hopCount} graph edges. Inspect the path for gadget composition.`, [chain.nodes[chain.nodes.length - 1].publicId]));
         }
       }
+      if (node.type === "behavior") {
+        const downstreamSinkIds = [...new Set(this.discoverChains(node.publicId, 5, 20)
+          .map((chain) => chain.nodes.at(-1)?.publicId)
+          .filter((id): id is string => Boolean(id)))];
+        const untestedSinkIds = downstreamSinkIds.filter((sinkId) => !hasTestTarget(sinkId, edges, allNodes));
+        if (untestedSinkIds.length > 0) {
+          gaps.push(gap(
+            "behavior_reaches_untested_sink",
+            node,
+            "This behavior has a recorded technical path to sink(s) with no exact test relation. Test the downstream effect before extending a result from the behavior alone.",
+            untestedSinkIds
+          ));
+        }
+      }
       if (node.type === "hypothesis") {
         const conclusionEdges = relatedEdges.filter((edge) => edge.type === "supports" || edge.type === "refutes");
         if (conclusionEdges.length === 0) gaps.push(gap("hypothesis_without_evidence_relation", node, "No supporting or refuting relation is linked to this hypothesis.", []));
         const supportEdges = conclusionEdges.filter((edge) => edge.type === "supports");
         const refuteEdges = conclusionEdges.filter((edge) => edge.type === "refutes");
+        const premiseIds = [...new Set(edges
+          .filter((edge) => edge.fromId === node.publicId && edge.type === "depends_on")
+          .map((edge) => edge.toId))];
+        if (premiseIds.length === 0) {
+          gaps.push(gap("hypothesis_without_premise_relation", node, "No explicit premise is linked with depends_on. Record decisive premises that must survive for this hypothesis to hold.", []));
+        }
+        const technicalChains = this.discoverChains(node.publicId, 6, 20);
+        if (premiseIds.length > 0 && technicalChains.length === 0) {
+          gaps.push(gap(
+            "hypothesis_without_technical_sink_path",
+            node,
+            "The recorded premises do not form a directed technical path to a sink. Check relation direction and missing data, state, boundary, or execution links.",
+            premiseIds
+          ));
+        }
+        if (technicalChains.length > 0) {
+          if (!hasNodeTypeWithinRelations(node.publicId, "principal", 3, edges, allNodes, HYPOTHESIS_CONTEXT_RELATIONS)
+            && !hasNodeTypeWithinRelations(node.publicId, "boundary", 3, edges, allNodes, HYPOTHESIS_CONTEXT_RELATIONS)) {
+            gaps.push(gap("hypothesis_without_authority_context", node, "No principal or boundary is connected through the hypothesis's technical context. Confirm whether authority changes the result.", []));
+          }
+          if (!hasNodeTypeWithinRelations(node.publicId, "state", 3, edges, allNodes, HYPOTHESIS_CONTEXT_RELATIONS)) {
+            gaps.push(gap("hypothesis_without_state_context", node, "No state or lifecycle node is connected through the hypothesis's technical context. Confirm whether order, retries, caches, or lifetime matter.", []));
+          }
+        }
+        const evidenceIds = [...new Set(conclusionEdges.map((edge) => edge.fromId === node.publicId ? edge.toId : edge.fromId))];
+        const terminalSinkIds = [...new Set(technicalChains
+          .map((chain) => chain.nodes.at(-1)?.publicId)
+          .filter((id): id is string => Boolean(id)))];
+        const evidenceGroups = [
+          { label: "supporting", edges: supportEdges },
+          { label: "refuting", edges: refuteEdges }
+        ];
+        for (const group of evidenceGroups) {
+          const groupEvidenceIds = [...new Set(group.edges.map((edge) => edge.fromId === node.publicId ? edge.toId : edge.fromId))];
+          const groupTestIds = groupEvidenceIds.filter((id) => allNodes.get(id)?.type === "test");
+          if (groupTestIds.length === 0) continue;
+          const testedTargets = new Set(groupTestIds.flatMap((testId) => testTargetIds(testId, edges, allNodes)));
+          if (premiseIds.length > 0) {
+            const uncoveredPremises = premiseIds.filter((id) => !testedTargets.has(id));
+            if (uncoveredPremises.length > 0) {
+              gaps.push(gap(
+                "hypothesis_partial_premise_coverage",
+                node,
+                `The ${group.label} test set does not target every recorded premise. Keep that conclusion scoped to the tested items.`,
+                [...uncoveredPremises, ...groupTestIds]
+              ));
+            }
+          }
+          const untestedTerminalSinks = terminalSinkIds.filter((id) => !testedTargets.has(id));
+          if (untestedTerminalSinks.length > 0) {
+            gaps.push(gap(
+              "hypothesis_evidence_stops_before_sink",
+              node,
+              `The ${group.label} test set covers a premise or intermediate item but not every terminal sink in the recorded technical path.`,
+              [...untestedTerminalSinks, ...groupTestIds]
+            ));
+          }
+        }
+        if (evidenceIds.length > 0 && evidenceIds.every((id) => allNodes.get(id)?.type === "intel")) {
+          gaps.push(gap(
+            "hypothesis_conclusion_only_from_intel",
+            node,
+            "Every supporting or refuting relation points to intel. Add target-specific observation or testing before treating the conclusion as current.",
+            evidenceIds
+          ));
+        }
+        const legacyHypothesisIds = edges
+          .filter((edge) => edge.fromId === node.publicId && edge.type === "derived_from" && allNodes.get(edge.toId)?.type === "hypothesis")
+          .map((edge) => edge.toId);
+        for (const legacyId of legacyHypothesisIds) {
+          const legacyWasRefuted = edges.some((edge) => edge.type === "refutes" && (edge.fromId === legacyId || edge.toId === legacyId));
+          const explicitRevision = edges.some((edge) =>
+            (edge.type === "supersedes" && edge.fromId === node.publicId && edge.toId === legacyId)
+            || (edge.type === "refutes" && edge.toId === legacyId && (edge.fromId === node.publicId || evidenceIds.includes(edge.fromId)))
+          );
+          if (legacyWasRefuted && !explicitRevision) {
+            gaps.push(gap(
+              "reopened_hypothesis_without_change_relation",
+              node,
+              "This hypothesis derives from a previously refuted hypothesis without an explicit refutes or supersedes relation explaining what changed.",
+              [legacyId]
+            ));
+          }
+        }
         if (supportEdges.length > 0 && refuteEdges.length > 0) {
           gaps.push(gap(
             "mixed_hypothesis_evidence",
@@ -860,9 +997,7 @@ export class ArgosDb {
         for (const refuteEdge of refuteEdges) {
           const evidenceId = refuteEdge.fromId === node.publicId ? refuteEdge.toId : refuteEdge.fromId;
           if (allNodes.get(evidenceId)?.type !== "test") continue;
-          const testedTargets = edges
-            .filter((edge) => edge.type === "tests" && (edge.fromId === evidenceId || edge.toId === evidenceId))
-            .map((edge) => edge.fromId === evidenceId ? edge.toId : edge.fromId);
+          const testedTargets = testTargetIds(evidenceId, edges, allNodes);
           for (const sinkId of testedTargets.filter((id) => allNodes.get(id)?.type === "sink")) {
             const upstreamIds = [...new Set(edges
               .filter((edge) => edge.toId === sinkId && ["flows_to", "produces", "writes", "calls", "transforms", "influences"].includes(edge.type))
@@ -884,12 +1019,10 @@ export class ArgosDb {
           const focusIds = new Set(directNeighbors);
           for (const edge of refuteEdges) {
             const evidenceId = edge.fromId === node.publicId ? edge.toId : edge.fromId;
-            for (const testEdge of edges.filter((candidate) => candidate.type === "tests" && (candidate.fromId === evidenceId || candidate.toId === evidenceId))) {
-              focusIds.add(testEdge.fromId === evidenceId ? testEdge.toId : testEdge.fromId);
-            }
+            for (const testedTargetId of testTargetIds(evidenceId, edges, allNodes)) focusIds.add(testedTargetId);
           }
           const newerRelations = edges.filter((edge) => {
-            if (edge.type === "supports" || edge.type === "refutes") return false;
+            if (!REFUTATION_RECHECK_RELATIONS.has(edge.type)) return false;
             return Date.parse(edge.createdAt) > latestRefute && (focusIds.has(edge.fromId) || focusIds.has(edge.toId));
           });
           if (newerRelations.length > 0) {
@@ -907,7 +1040,10 @@ export class ArgosDb {
           const changedKnowledge = [...affectedIds].filter((id) => {
             if (id === node.publicId) return false;
             const candidate = allNodes.get(id);
-            return candidate !== undefined && Date.parse(candidate.updatedAt) > latestRefute;
+            return candidate !== undefined
+              && !CONTEXT_ONLY_NODE_TYPES.has(candidate.type)
+              && Date.parse(candidate.createdAt) <= latestRefute
+              && Date.parse(candidate.updatedAt) > latestRefute;
           });
           if (changedKnowledge.length > 0) {
             gaps.push(gap(
@@ -1035,7 +1171,11 @@ export class ArgosDb {
       CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_node_id);
       CREATE INDEX IF NOT EXISTS idx_suggestions_status ON link_suggestions(status, score DESC);
     `);
-    this.db.prepare("INSERT INTO metadata(key, value) VALUES ('schema_version', '2') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
+    this.db.prepare(`
+      INSERT INTO metadata(key, value) VALUES ('schema_version', '2')
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      WHERE metadata.value <> excluded.value
+    `).run();
   }
 
   private metadata(key: string): string | null {
@@ -1357,10 +1497,52 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
   return Math.max(min, Math.min(max, Math.trunc(number)));
 }
 
-function pushAdjacency(map: Map<string, Array<{ nodeId: string; edge: EdgeView }>>, from: string, to: string, edge: EdgeView): void {
+const HYPOTHESIS_CONTEXT_RELATIONS = new Set([
+  ...TECHNICAL_CHAIN_RELATIONS,
+  "depends_on",
+  "guards"
+]);
+
+const SINK_CONTEXT_RELATIONS = new Set([
+  ...TECHNICAL_CHAIN_RELATIONS,
+  "guards"
+]);
+
+const REFUTATION_RECHECK_RELATIONS = new Set([
+  ...TECHNICAL_CHAIN_RELATIONS,
+  "depends_on",
+  "guards",
+  "supersedes"
+]);
+
+const CONTEXT_ONLY_NODE_TYPES = new Set([
+  "target",
+  "test",
+  "finding",
+  "intel",
+  "artifact",
+  "note"
+]);
+
+function pushChainAdjacency(
+  map: Map<string, Array<{ nodeId: string; edge: EdgeView; technical: boolean }>>,
+  from: string,
+  to: string,
+  edge: EdgeView,
+  technical: boolean
+): void {
   const list = map.get(from) ?? [];
-  list.push({ nodeId: to, edge });
+  list.push({ nodeId: to, edge, technical });
   map.set(from, list);
+}
+
+function uniqueEdges(edges: EdgeView[]): EdgeView[] {
+  const seen = new Set<number>();
+  return edges.filter((edge) => {
+    if (seen.has(edge.id)) return false;
+    seen.add(edge.id);
+    return true;
+  }).sort((left, right) => left.id - right.id);
 }
 
 function neighborIds(id: string, edges: EdgeView[]): Set<string> {
@@ -1372,11 +1554,25 @@ function neighborIds(id: string, edges: EdgeView[]): Set<string> {
   return result;
 }
 
-function hasNodeTypeWithin(startId: string, type: string, maxDepth: number, edges: EdgeView[], nodes: Map<string, KnowledgeNode>): boolean {
-  return nodeIdsOfTypeWithin(startId, type, maxDepth, edges, nodes).length > 0;
+function hasNodeTypeWithinRelations(
+  startId: string,
+  type: string,
+  maxDepth: number,
+  edges: EdgeView[],
+  nodes: Map<string, KnowledgeNode>,
+  relationTypes: Set<string>
+): boolean {
+  return nodeIdsOfTypeWithinRelations(startId, type, maxDepth, edges, nodes, relationTypes).length > 0;
 }
 
-function nodeIdsOfTypeWithin(startId: string, type: string, maxDepth: number, edges: EdgeView[], nodes: Map<string, KnowledgeNode>): string[] {
+function nodeIdsOfTypeWithinRelations(
+  startId: string,
+  type: string,
+  maxDepth: number,
+  edges: EdgeView[],
+  nodes: Map<string, KnowledgeNode>,
+  relationTypes: Set<string>
+): string[] {
   const visited = new Set([startId]);
   let frontier = [startId];
   const matches = new Set<string>();
@@ -1384,6 +1580,7 @@ function nodeIdsOfTypeWithin(startId: string, type: string, maxDepth: number, ed
     const next: string[] = [];
     for (const id of frontier) {
       for (const edge of edges) {
+        if (!relationTypes.has(edge.type)) continue;
         const neighbor = edge.fromId === id ? edge.toId : edge.toId === id ? edge.fromId : null;
         if (!neighbor || visited.has(neighbor)) continue;
         if (nodes.get(neighbor)?.type === type) matches.add(neighbor);
@@ -1394,6 +1591,17 @@ function nodeIdsOfTypeWithin(startId: string, type: string, maxDepth: number, ed
     frontier = next;
   }
   return [...matches];
+}
+
+function testTargetIds(testId: string, edges: EdgeView[], nodes: Map<string, KnowledgeNode>): string[] {
+  if (nodes.get(testId)?.type !== "test") return [];
+  return edges
+    .filter((edge) => edge.type === "tests" && edge.fromId === testId)
+    .map((edge) => edge.toId);
+}
+
+function hasTestTarget(targetId: string, edges: EdgeView[], nodes: Map<string, KnowledgeNode>): boolean {
+  return edges.some((edge) => edge.type === "tests" && edge.toId === targetId && nodes.get(edge.fromId)?.type === "test");
 }
 
 function gap(code: string, node: KnowledgeNode, message: string, relatedNodeIds: string[]): KnowledgeGap {

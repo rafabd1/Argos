@@ -10,6 +10,7 @@ const node_process_1 = __importDefault(require("node:process"));
 const db_1 = require("./db");
 const chimera_1 = require("./chimera");
 const obsidian_1 = require("./obsidian");
+const obsidian_sync_1 = require("./obsidian-sync");
 const opencode_1 = require("./opencode");
 const paths_1 = require("./paths");
 const vocabulary_1 = require("./vocabulary");
@@ -35,7 +36,8 @@ async function main() {
     assertPositionals(command, subcommand, rest);
     const root = (0, paths_1.resolveTargetRoot)(option(parsed, "root"));
     if (command === "init") {
-        print((0, db_1.initializeArgos)(root, option(parsed, "name")));
+        const result = (0, db_1.initializeArgos)(root, option(parsed, "name"));
+        print({ ...result, obsidianSync: (0, obsidian_sync_1.ensureObsidianSync)(root) });
         return;
     }
     if (command === "status") {
@@ -43,7 +45,8 @@ async function main() {
             print({ initialized: false, root });
             return;
         }
-        print(withDb(root, (db) => db.status()));
+        const result = withDb(root, (db) => db.status());
+        print({ ...result, obsidianSync: (0, obsidian_sync_1.readObsidianSyncStatus)(root) });
         return;
     }
     if (command === "vocabulary") {
@@ -117,8 +120,32 @@ async function main() {
         return;
     }
     if (command === "export" && subcommand === "obsidian") {
-        print(withDb(root, (db) => (0, obsidian_1.exportObsidian)(db, option(parsed, "out"), flag(parsed, "prune"))));
+        print(withDb(root, (db) => (0, obsidian_1.exportObsidian)(db, option(parsed, "out"), flag(parsed, "prune")), false));
         return;
+    }
+    if (command === "obsidian" && subcommand === "sync") {
+        const action = rest[0] ?? "status";
+        if (action === "enable") {
+            print((0, obsidian_sync_1.enableObsidianSync)(root, {
+                output: option(parsed, "out"),
+                intervalSeconds: numberOption(parsed, "interval-seconds"),
+                prune: parsed.options.has("prune") ? flag(parsed, "prune") : undefined
+            }));
+            return;
+        }
+        if (action === "disable") {
+            print((0, obsidian_sync_1.disableObsidianSync)(root));
+            return;
+        }
+        if (action === "refresh") {
+            print((0, obsidian_sync_1.refreshObsidianSync)(root));
+            return;
+        }
+        if (action === "status") {
+            print((0, obsidian_sync_1.ensureObsidianSync)(root));
+            return;
+        }
+        throw new Error("Usage: argos obsidian sync enable|status|refresh|disable");
     }
     if (command === "opencode") {
         const action = subcommand ?? "doctor";
@@ -364,14 +391,18 @@ function handleLink(root, subcommand, rest, parsed) {
     }
     throw new Error("Usage: argos link add|remove|suggest|list|accept|reject");
 }
-function withDb(root, action) {
+function withDb(root, action, synchronize = true) {
     const db = new db_1.ArgosDb(root);
+    let result;
     try {
-        return action(db);
+        result = action(db);
     }
     finally {
         db.close();
     }
+    if (synchronize)
+        (0, obsidian_sync_1.ensureObsidianSync)(root);
+    return result;
 }
 function parseArgs(args) {
     const positional = [];
@@ -499,6 +530,9 @@ function allowedOptions(command, subcommand, rest) {
         return ["id", "limit"];
     if (command === "export" && subcommand === "obsidian")
         return ["out", "prune"];
+    if (command === "obsidian" && subcommand === "sync") {
+        return rest[0] === "enable" ? ["out", "interval-seconds", "prune"] : [];
+    }
     if (command === "opencode")
         return subcommand === "install" ? ["force"] : [];
     if (command === "chimera") {
@@ -564,6 +598,11 @@ function assertPositionals(command, subcommand, rest) {
     if (["inspect", "map", "chains", "gaps", "history"].includes(command)) {
         if (rest.length > 0)
             throw new Error(`Unexpected positional argument: ${rest[0]}`);
+        return;
+    }
+    if (command === "obsidian" && subcommand === "sync") {
+        if (rest.length > 1)
+            throw new Error(`Unexpected positional argument: ${rest[1]}`);
         return;
     }
     if (command === "chimera") {
@@ -634,6 +673,8 @@ Usage:
   argos stale [--age-days <n>] [--limit <n>]
   argos history <N...> [--limit <n>]
   argos export obsidian [--out <path>] [--prune]
+  argos obsidian sync enable [--out <path>] [--interval-seconds <n>] [--prune true|false]
+  argos obsidian sync status|refresh|disable
   argos opencode install [--force]
   argos opencode doctor
 
@@ -655,7 +696,8 @@ Usage:
 
 All commands accept --root. Node content is free-form Markdown. Structural
 changes require explicit node and relation operations; Argos never infers them
-from prose.
+from prose. Obsidian sync checks for pending graph changes after normal workspace
+operations and can be disabled persistently with argos obsidian sync disable.
 `);
 }
 main().catch((error) => {

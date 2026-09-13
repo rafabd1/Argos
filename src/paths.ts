@@ -22,6 +22,10 @@ export function defaultVaultPath(root: string): string {
   return path.join(argosDir(root), "obsidian");
 }
 
+export function obsidianSyncStatePath(root: string): string {
+  return path.join(argosDir(root), "obsidian-sync.json");
+}
+
 export function chimeraDir(root: string): string {
   return path.join(argosDir(root), "chimera");
 }

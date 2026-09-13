@@ -23,6 +23,13 @@ import {
   workflowSnapshot
 } from "./chimera";
 import { exportObsidian } from "./obsidian";
+import {
+  disableObsidianSync,
+  enableObsidianSync,
+  ensureObsidianSync,
+  readObsidianSyncStatus,
+  refreshObsidianSync,
+} from "./obsidian-sync";
 import { doctorOpenCodeSupport, installOpenCodeSupport } from "./opencode";
 import { resolveTargetRoot } from "./paths";
 import { addVocabularyType } from "./vocabulary";
@@ -54,14 +61,14 @@ const tools: ToolDefinition[] = [
     title: "Initialize Argos",
     description: "Initialize a graph-native knowledge base at the target workspace root.",
     inputSchema: schema({ root: rootProperty, name: optionalStringProp("Human-readable target name.") }, ["root"]),
-    handler: ({ root, name }) => initializeArgos(rootValue(root), maybeString(name))
+    handler: ({ root, name }) => initializeWithSync(rootValue(root), maybeString(name))
   },
   {
     name: "argos_status",
     title: "Read Argos Status",
     description: "Return knowledge graph counts, schema version, and node-type distribution.",
     inputSchema: schema({ root: rootProperty }, ["root"]),
-    handler: ({ root }) => withDb(rootValue(root), (db) => db.status())
+    handler: ({ root }) => statusWithSync(rootValue(root))
   },
   {
     name: "argos_vocabulary_add",
@@ -173,7 +180,7 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_inspect_node",
     title: "Inspect Node And Its Research Context",
-    description: "Return one canonical note with a bounded graph, objective coverage gaps, nearby sink paths, and pending relation suggestions in one compact recovery call.",
+    description: "Return one canonical note with a bounded graph, objective coverage gaps, directed technical sink paths, separate context relations, and pending relation suggestions.",
     inputSchema: schema({
       root: rootProperty,
       id: stringProp("Canonical node ID."),
@@ -265,7 +272,7 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_find_chains",
     title: "Find Sink Paths",
-    description: "Find bounded graph paths from one node to other sinks. A sink becomes a gadget through its role in a path; Argos does not infer exploitability.",
+    description: "Find bounded directed paths to sinks through technical relations. Context, evidence, ownership, and provenance links never bridge a chain; Argos does not infer exploitability.",
     inputSchema: schema({
       root: rootProperty,
       fromId: stringProp("Starting node, usually a sink."),
@@ -277,7 +284,7 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_find_gaps",
     title: "Find Knowledge Gaps",
-    description: "Surface objective graph conditions such as partial path coverage, conditional boundary coverage, mixed evidence, conclusions followed by new relations, missing authority or state context, old notes, and pending relation suggestions. These are inspection prompts, not verdicts.",
+    description: "Surface structural conditions such as partial premise or sink coverage, missing technical, authority, or state context, later premise changes, intel-only conclusions, old notes, and pending links. These are inspection prompts, not verdicts.",
     inputSchema: schema({ root: rootProperty, id: optionalStringProp("Optional node ID. Omit to inspect sinks and hypotheses."), ageDays: integerProp("Age notice threshold.", 1, 100_000) }, ["root"]),
     handler: ({ root, id, ageDays }) => withDb(rootValue(root), (db) => db.gaps(maybeString(id), optionalNumber(ageDays)))
   },
@@ -304,7 +311,33 @@ const tools: ToolDefinition[] = [
       output: optionalStringProp("Output vault path. Defaults to <root>/.argos/obsidian."),
       prune: booleanProp("Remove stale Argos-generated files listed in the previous manifest.")
     }, ["root"]),
-    handler: ({ root, output, prune }) => withDb(rootValue(root), (db) => exportObsidian(db, maybeString(output), prune === true))
+    handler: ({ root, output, prune }) => withDb(rootValue(root), (db) => exportObsidian(db, maybeString(output), prune === true), false)
+  },
+  {
+    name: "argos_obsidian_sync",
+    title: "Manage Automatic Obsidian Sync",
+    description: "Read, refresh, configure, or stop the automatic on-use Obsidian projection. Normal Argos calls refresh it when the configured interval has elapsed.",
+    inputSchema: schema({
+      root: rootProperty,
+      action: enumProp(["status", "enable", "refresh", "disable"], "Sync action."),
+      output: optionalStringProp("Optional vault path used by enable."),
+      intervalSeconds: integerProp("Seconds between change checks and exports.", 1, 86_400),
+      prune: booleanProp("Remove unchanged stale generated files during each export.")
+    }, ["root", "action"]),
+    handler: ({ root, action, output, intervalSeconds, prune }) => {
+      const targetRoot = rootValue(root);
+      const selected = enumValue(action, ["status", "enable", "refresh", "disable"]);
+      if (selected === "enable") {
+        return enableObsidianSync(targetRoot, {
+          output: maybeString(output),
+          intervalSeconds: optionalNumber(intervalSeconds),
+          prune: optionalBoolean(prune)
+        });
+      }
+      if (selected === "disable") return disableObsidianSync(targetRoot);
+      if (selected === "refresh") return refreshObsidianSync(targetRoot);
+      return ensureObsidianSync(targetRoot);
+    }
   },
   {
     name: "argos_opencode_install",
@@ -588,13 +621,27 @@ async function handleLine(line: string): Promise<void> {
   }
 }
 
-function withDb<T>(root: string, action: (db: ArgosDb) => T): T {
+function withDb<T>(root: string, action: (db: ArgosDb) => T, synchronize = true): T {
   const db = new ArgosDb(root);
+  let result: T;
   try {
-    return action(db);
+    result = action(db);
   } finally {
     db.close();
   }
+  if (synchronize) ensureObsidianSync(root);
+  return result;
+}
+
+function initializeWithSync(root: string, name?: string): unknown {
+  const result = initializeArgos(root, name);
+  ensureObsidianSync(root);
+  return { ...result, obsidianSync: readObsidianSyncStatus(root) };
+}
+
+function statusWithSync(root: string): unknown {
+  const result = withDb(root, (db) => db.status());
+  return { ...result, obsidianSync: readObsidianSyncStatus(root) };
 }
 
 function toolResult(value: unknown): JsonObject {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -16,12 +17,18 @@ const target = path.join(temp, "target");
 const argosHome = path.join(temp, "home");
 const mockState = path.join(temp, "mock-opencode-state.json");
 fs.mkdirSync(target, { recursive: true });
-const env = { ...process.env, ARGOS_HOME: argosHome, ARGOS_MOCK_STATE: mockState, OPENCODE_COMMAND: process.execPath };
+const env = {
+  ...process.env,
+  ARGOS_HOME: argosHome,
+  ARGOS_MOCK_STATE: mockState,
+  ARGOS_DISABLE_OBSIDIAN_SYNC: "1",
+  OPENCODE_COMMAND: process.execPath
+};
 let server = null;
 
 try {
   const version = run("--version");
-  assert.equal(version.version, "0.1.0");
+  assert.equal(version.version, "0.1.1");
   const initialized = run("init", "--root", target, "--name", "Smoke Target");
   assert.equal(initialized.initialized, true);
   const legacyConfigPath = path.join(target, ".argos", "config.json");
@@ -259,11 +266,142 @@ try {
   const hypothesisGaps = run("gaps", "--root", target, "--id", hypothesis.publicId);
   assert(hypothesisGaps.some((gap) => gap.code === "refutation_with_partial_path_coverage"));
   assert(hypothesisGaps.some((gap) => gap.code === "new_relation_after_refutation"));
-  assert(hypothesisGaps.some((gap) => gap.code === "linked_knowledge_updated_after_refutation" && gap.relatedNodeIds.includes(alternateData.publicId)));
+  assert.equal(hypothesisGaps.some((gap) => gap.code === "linked_knowledge_updated_after_refutation" && gap.relatedNodeIds.includes(alternateData.publicId)), false);
   const inspection = run("inspect", "--root", target, "--id", sinkA.publicId, "--depth", "2");
   assert.equal(inspection.context.node.publicId, sinkA.publicId);
   assert(inspection.map.nodes.some((node) => node.publicId === alternateData.publicId));
   assert(inspection.gaps.some((gap) => gap.code === "partial_sink_path_coverage"));
+
+  const graphTarget = path.join(temp, "directed-graph-target");
+  fs.mkdirSync(graphTarget, { recursive: true });
+  run("init", "--root", graphTarget, "--name", "Directed graph target");
+  const graphRoot = createAt(graphTarget, "target", "Directed graph target", "Synthetic graph used to verify traversal semantics.");
+  const graphComponent = createAt(graphTarget, "component", "Frame dispatcher", "Dispatches decoded frames.");
+  const graphSink = createAt(graphTarget, "sink", "Privileged frame action", "Performs the recorded side effect.");
+  const contextOnlySink = createAt(graphTarget, "sink", "Unrelated target sink", "Shares only the target container.");
+  const graphBehavior = createAt(graphTarget, "behavior", "Frame type confusion", "Changes the decoded frame type.");
+  const graphData = createAt(graphTarget, "data", "Alternate frame producer", "A second premise and producer.");
+  const graphHypothesis = createAt(graphTarget, "hypothesis", "Confused frame reaches privileged action", "One falsifiable chain proposition.");
+  const graphTest = createAt(graphTarget, "test", "Frame confusion primitive test", "Tests only the primitive at first.");
+  linkAt(graphTarget, graphRoot.publicId, "contains", graphComponent.publicId);
+  linkAt(graphTarget, graphRoot.publicId, "contains", contextOnlySink.publicId);
+  linkAt(graphTarget, graphHypothesis.publicId, "depends_on", graphBehavior.publicId);
+  linkAt(graphTarget, graphHypothesis.publicId, "depends_on", graphData.publicId);
+  linkAt(graphTarget, graphBehavior.publicId, "affects", graphComponent.publicId);
+  linkAt(graphTarget, graphComponent.publicId, "flows_to", graphSink.publicId);
+  linkAt(graphTarget, graphData.publicId, "flows_to", graphSink.publicId);
+  linkAt(graphTarget, graphTest.publicId, "tests", graphBehavior.publicId);
+  linkAt(graphTarget, graphTest.publicId, "supports", graphHypothesis.publicId);
+
+  const technicalChains = run("chains", "--root", graphTarget, "--from", graphHypothesis.publicId, "--max-hops", "5");
+  assert(technicalChains.some((chain) => chain.nodes.at(-1).publicId === graphSink.publicId));
+  assert.equal(technicalChains.some((chain) => chain.nodes.some((node) => node.publicId === graphRoot.publicId)), false);
+  assert.equal(technicalChains.some((chain) => chain.nodes.at(-1).publicId === contextOnlySink.publicId), false);
+  assert(technicalChains.every((chain) => chain.edges.every((edge, index) => edge.fromId === chain.nodes[index].publicId && edge.toId === chain.nodes[index + 1].publicId)));
+  const graphInspection = run("inspect", "--root", graphTarget, "--id", graphHypothesis.publicId, "--depth", "3");
+  assert.equal(graphInspection.chainMode, "directed_technical");
+  assert.deepEqual(graphInspection.chains, graphInspection.technicalChains);
+  assert(graphInspection.contextRelations.some((edge) => edge.type === "depends_on"));
+  assert.equal(graphInspection.technicalChains.some((chain) => chain.nodes.at(-1).publicId === contextOnlySink.publicId), false);
+  const graphHypothesisGaps = run("gaps", "--root", graphTarget, "--id", graphHypothesis.publicId);
+  assert(graphHypothesisGaps.some((gap) => gap.code === "hypothesis_partial_premise_coverage" && gap.relatedNodeIds.includes(graphData.publicId)));
+  assert(graphHypothesisGaps.some((gap) => gap.code === "hypothesis_evidence_stops_before_sink" && gap.relatedNodeIds.includes(graphSink.publicId)));
+  const behaviorGaps = run("gaps", "--root", graphTarget, "--id", graphBehavior.publicId);
+  assert(behaviorGaps.some((gap) => gap.code === "behavior_reaches_untested_sink" && gap.relatedNodeIds.includes(graphSink.publicId)));
+
+  linkAt(graphTarget, graphTest.publicId, "refutes", graphHypothesis.publicId);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  linkAt(graphTarget, graphTest.publicId, "tests", graphData.publicId);
+  linkAt(graphTarget, graphTest.publicId, "tests", graphSink.publicId);
+  const completedEvidenceGaps = run("gaps", "--root", graphTarget, "--id", graphHypothesis.publicId);
+  assert.equal(completedEvidenceGaps.some((gap) => gap.code === "new_relation_after_refutation"), false);
+  assert.equal(completedEvidenceGaps.some((gap) => gap.code === "hypothesis_partial_premise_coverage"), false);
+  assert.equal(completedEvidenceGaps.some((gap) => gap.code === "hypothesis_evidence_stops_before_sink"), false);
+  assert.equal(run("gaps", "--root", graphTarget, "--id", graphBehavior.publicId).some((gap) => gap.code === "behavior_reaches_untested_sink"), false);
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  run("node", "update", "--root", graphTarget, "--id", graphData.publicId, "--mode", "append", "--content", "The producer changed after the refutation.");
+  assert(run("gaps", "--root", graphTarget, "--id", graphHypothesis.publicId)
+    .some((gap) => gap.code === "linked_knowledge_updated_after_refutation" && gap.relatedNodeIds.includes(graphData.publicId)));
+  const postRefuteState = createAt(graphTarget, "state", "Deferred frame state", "Changes how the action runs later.");
+  linkAt(graphTarget, graphBehavior.publicId, "influences", postRefuteState.publicId);
+  assert(run("gaps", "--root", graphTarget, "--id", graphHypothesis.publicId).some((gap) => gap.code === "new_relation_after_refutation"));
+
+  const intel = createAt(graphTarget, "intel", "Historical frame advisory", "Historical external context only.");
+  const intelHypothesis = createAt(graphTarget, "hypothesis", "Historical frame claim", "Requires target-specific validation.");
+  linkAt(graphTarget, intel.publicId, "supports", intelHypothesis.publicId);
+  assert(run("gaps", "--root", graphTarget, "--id", intelHypothesis.publicId).some((gap) => gap.code === "hypothesis_conclusion_only_from_intel"));
+  const legacyHypothesis = createAt(graphTarget, "hypothesis", "Legacy frame conclusion", "Earlier conclusion.");
+  const legacyTest = createAt(graphTarget, "test", "Legacy frame negative control", "Refuted the earlier proposition.");
+  linkAt(graphTarget, legacyTest.publicId, "refutes", legacyHypothesis.publicId);
+  const reopenedHypothesis = createAt(graphTarget, "hypothesis", "Reopened frame conclusion", "Revisits the older proposition.");
+  linkAt(graphTarget, reopenedHypothesis.publicId, "derived_from", legacyHypothesis.publicId);
+  assert(run("gaps", "--root", graphTarget, "--id", reopenedHypothesis.publicId).some((gap) => gap.code === "reopened_hypothesis_without_change_relation"));
+
+  const markdownTitle = createAt(graphTarget, "note", "CURRENT-RESULTS.md", "A title that already carries a Markdown extension.");
+  const graphVault = path.join(temp, "directed-graph-vault");
+  run("export", "obsidian", "--root", graphTarget, "--out", graphVault);
+  const noteFolder = path.join(graphVault, "Note");
+  const normalizedNote = fs.readdirSync(noteFolder).find((name) => name.startsWith(markdownTitle.publicId));
+  assert(normalizedNote?.endsWith("CURRENT-RESULTS.md"));
+  assert.equal(normalizedNote?.endsWith(".md.md"), false);
+  const legacyDoubleExtension = `${normalizedNote}.md`;
+  fs.copyFileSync(path.join(noteFolder, normalizedNote), path.join(noteFolder, legacyDoubleExtension));
+  const graphManifestPath = path.join(graphVault, ".argos-export.json");
+  const graphManifest = JSON.parse(fs.readFileSync(graphManifestPath, "utf8"));
+  const legacyManifestPath = `Note/${legacyDoubleExtension}`;
+  graphManifest.generatedFiles.push(legacyManifestPath);
+  graphManifest.sha256ByFile[legacyManifestPath] = sha256(path.join(noteFolder, legacyDoubleExtension));
+  fs.writeFileSync(graphManifestPath, `${JSON.stringify(graphManifest, null, 2)}\n`);
+  const normalizedExport = run("export", "obsidian", "--root", graphTarget, "--out", graphVault, "--prune");
+  assert.equal(normalizedExport.filesPruned, 1);
+  assert.equal(fs.existsSync(path.join(noteFolder, legacyDoubleExtension)), false);
+
+  const syncTarget = path.join(temp, "automatic-sync-target");
+  const relocatedSyncTarget = path.join(temp, "relocated-sync-target");
+  fs.mkdirSync(syncTarget, { recursive: true });
+  const syncEnv = { ...env, ARGOS_OBSIDIAN_SYNC_INTERVAL_SECONDS: "1" };
+  delete syncEnv.ARGOS_DISABLE_OBSIDIAN_SYNC;
+  const syncInit = runWithEnv(syncEnv, "init", "--root", syncTarget, "--name", "Automatic sync target");
+  assert.equal(syncInit.obsidianSync.automatic, true);
+  assert.equal(syncInit.obsidianSync.mode, "on_use");
+  const firstSync = await waitForObsidianSync(syncTarget, syncEnv, (status) => status.lastResult?.nodeCount === 0 && !status.due);
+  assert(fs.existsSync(firstSync.lastResult.canvasPath));
+  const storedSync = JSON.parse(fs.readFileSync(path.join(syncTarget, ".argos", "obsidian-sync.json"), "utf8"));
+  assert.equal(storedSync.output, ".argos/obsidian");
+  assert.equal("root" in storedSync, false);
+  assert.equal("pid" in storedSync, false);
+  const manualVault = path.join(syncTarget, "manual-vault");
+  fs.rmSync(firstSync.output, { recursive: true, force: true });
+  const manualOnly = runWithEnv(syncEnv, "export", "obsidian", "--root", syncTarget, "--out", manualVault);
+  assert(fs.existsSync(manualOnly.manifestPath));
+  assert.equal(fs.existsSync(firstSync.output), false);
+  const syncedNode = runWithEnv(syncEnv, "node", "create", "--root", syncTarget, "--type", "component", "--title", "Automatically projected component", "--content", "Written after automatic sync was enabled.").node;
+  await new Promise((resolve) => setTimeout(resolve, 1_100));
+  const concurrentChecks = await Promise.all(Array.from({ length: 4 }, () =>
+    runAsyncWithEnv(syncEnv, "obsidian", "sync", "status", "--root", syncTarget)));
+  assert(concurrentChecks.every((status) => status.lastError === null));
+  const updatedSync = await waitForObsidianSync(syncTarget, syncEnv, (status) => status.lastResult?.nodeCount === 1 && !status.due);
+  assert(fs.readdirSync(path.join(updatedSync.output, "Component")).some((name) => name.startsWith(syncedNode.publicId)));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(syncTarget, ".argos", "obsidian-sync.json"), "utf8")).attemptToken, null);
+  await renameWithRetry(syncTarget, relocatedSyncTarget);
+  const relocatedStatus = runWithEnv(syncEnv, "status", "--root", relocatedSyncTarget);
+  assert.equal(relocatedStatus.obsidianSync.root, path.resolve(relocatedSyncTarget));
+  assert.equal(relocatedStatus.obsidianSync.output, path.join(path.resolve(relocatedSyncTarget), ".argos", "obsidian"));
+  const relocatedSync = await waitForObsidianSync(relocatedSyncTarget, syncEnv, (status) => status.lastResult?.nodeCount === 1 && !status.due);
+  assert(fs.readdirSync(path.join(relocatedSync.output, "Component")).some((name) => name.startsWith(syncedNode.publicId)));
+  assert.equal(relocatedSync.lastResult.output, path.join(path.resolve(relocatedSyncTarget), ".argos", "obsidian"));
+  assert.equal(fs.existsSync(syncTarget), false);
+  const stoppedSync = runWithEnv(syncEnv, "obsidian", "sync", "disable", "--root", relocatedSyncTarget);
+  assert.equal(stoppedSync.enabled, false);
+  assert.equal(stoppedSync.nextEligibleAt, null);
+  const statusWhileDisabled = runWithEnv(syncEnv, "status", "--root", relocatedSyncTarget);
+  assert.equal(statusWhileDisabled.obsidianSync.enabled, false);
+  const restartedSync = runWithEnv(syncEnv, "obsidian", "sync", "enable", "--root", relocatedSyncTarget, "--interval-seconds", "1");
+  assert.equal(restartedSync.enabled, true);
+  assert.equal(restartedSync.lastResult?.nodeCount, 1);
+  assert.equal(runWithEnv(syncEnv, "obsidian", "sync", "refresh", "--root", relocatedSyncTarget).lastResult?.nodeCount, 1);
+  assert.equal(runWithEnv(syncEnv, "obsidian", "sync", "disable", "--root", relocatedSyncTarget).enabled, false);
 
   fs.writeFileSync(path.join(target, "opencode.json"), `${JSON.stringify({ theme: "system" }, null, 2)}\n`);
   const openCodeInstall = run("opencode", "install", "--root", target);
@@ -471,6 +609,16 @@ function link(from, type, to) {
   return run("link", "add", "--root", target, "--from", from, "--type", type, "--to", to);
 }
 
+function createAt(root, type, title, content) {
+  const result = run("node", "create", "--root", root, "--type", type, "--title", title, "--content", content);
+  assert.equal(result.created, true, JSON.stringify(result));
+  return result.node;
+}
+
+function linkAt(root, from, type, to) {
+  return run("link", "add", "--root", root, "--from", from, "--type", type, "--to", to);
+}
+
 function run(...args) {
   return runWithEnv(env, ...args);
 }
@@ -517,6 +665,34 @@ async function waitForSession(id, status) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(`Timed out waiting for ${id} to become ${status}`);
+}
+
+async function waitForObsidianSync(root, customEnv, predicate) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const status = runWithEnv(customEnv, "obsidian", "sync", "status", "--root", root);
+    if (predicate(status)) return status;
+    if (status.lastError) throw new Error(`Obsidian sync failed: ${status.lastError}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("Timed out waiting for automatic Obsidian sync");
+}
+
+async function renameWithRetry(from, to) {
+  let lastError;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  throw lastError;
+}
+
+function sha256(filePath) {
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
 function freePort() {

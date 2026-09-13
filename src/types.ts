@@ -103,6 +103,11 @@ export interface KnowledgeInspection {
   };
   map: GraphMap;
   gaps: KnowledgeGap[];
+  chainMode: "directed_technical";
+  technicalRelations: EdgeView[];
+  contextRelations: EdgeView[];
+  technicalChains: ChainPath[];
+  /** Backward-compatible alias for technicalChains. */
   chains: ChainPath[];
   pendingSuggestions: LinkSuggestion[];
   pendingSuggestionCount: number;

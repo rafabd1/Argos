@@ -92,7 +92,10 @@ argos stale --root C:\path\to\target --age-days 90 --limit 100
 Search returns lexical and structural matches with reasons and distance.
 `inspect` is the usual next call for a likely center. `map` is useful when the
 caller needs a wider neighborhood, while `chains` focuses on paths that reach
-another sink. Maps report `truncated`, omitted counts, and a bounded frontier;
+another sink through directed technical relations. Inspection returns those
+paths as both `technicalChains` and the backward-compatible `chains`, while
+`contextRelations` keeps direct structure, evidence, and provenance separate.
+Maps report `truncated`, omitted counts, and a bounded frontier;
 follow that frontier with targeted reads instead of treating omitted context as
 evidence that a relation is absent.
 
@@ -104,16 +107,30 @@ MCP: `argos_search`, `argos_inspect_node`, `argos_map`, `argos_find_chains`,
 ```powershell
 argos export obsidian --root C:\path\to\target
 argos export obsidian --root C:\path\to\target --out C:\vaults\target --prune
+argos obsidian sync status --root C:\path\to\target
+argos obsidian sync enable --root C:\path\to\target --out C:\vaults\target --interval-seconds 30
+argos obsidian sync refresh --root C:\path\to\target
+argos obsidian sync disable --root C:\path\to\target
 ```
 
-The default output is `<root>/.argos/obsidian`. `--prune` removes old generated
+The default output is `<root>/.argos/obsidian`. Every normal Argos operation
+checks whether the graph changed and whether the 30-second default interval has
+elapsed. A due export runs before that command returns and uses safe pruning.
+`refresh` forces it immediately. A manual disable remains in effect for that
+workspace until `enable` turns it back on.
+
+The state contains no persistent process or fixed workspace root. Internal
+vault paths follow the `root` passed by the current tool after a move or copy.
+External custom vault paths remain unchanged.
+
+`--prune` on a manual export removes old generated
 note filenames after renames. It only removes paths recorded in the Argos
 manifest and contained inside the output directory. Hashes protect stale files
 that a user edited after export; those files are retained and counted as
 `modifiedFilesPreserved`. The same fail-safe applies to files inherited from a
 legacy manifest that has no hash.
 
-MCP: `argos_export_obsidian`.
+MCP: `argos_export_obsidian`, `argos_obsidian_sync`.
 
 ## OpenCode Project Support
 

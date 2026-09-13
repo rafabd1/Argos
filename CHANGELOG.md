@@ -2,6 +2,25 @@
 
 All notable changes to Argos are documented here.
 
+## [0.1.1] - 2026-09-12
+
+### Added
+
+- Automatic on-use Obsidian sync with persistent status, refresh, enable, interval, destination, and pruning controls.
+- Sync follows a moved or copied workspace by resolving internal vault paths from the root used by each tool call.
+- Structural gap checks for partial hypothesis premises, untested downstream sinks, missing technical paths, intel-only conclusions, and reopened refuted hypotheses.
+- Separate technical chains and contextual relations in node inspection responses.
+
+### Changed
+
+- Chain discovery now follows explicit edge direction and technical relations, with `depends_on` allowed only as the first step from a hypothesis.
+- Refutation checks focus on later technical or premise changes instead of the order used to attach test metadata.
+- Research skills now keep test and conclusion scope exact and revisit prior conclusions through explicit graph links.
+
+### Fixed
+
+- Obsidian note titles that already end in `.md` no longer produce `.md.md` files. Safe pruning removes an unchanged legacy projection on the next export.
+
 ## [0.1.0] - 2026-09-12
 
 ### Added

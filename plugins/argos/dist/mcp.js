@@ -8,6 +8,7 @@ const node_process_1 = __importDefault(require("node:process"));
 const db_1 = require("./db");
 const chimera_1 = require("./chimera");
 const obsidian_1 = require("./obsidian");
+const obsidian_sync_1 = require("./obsidian-sync");
 const opencode_1 = require("./opencode");
 const paths_1 = require("./paths");
 const vocabulary_1 = require("./vocabulary");
@@ -19,14 +20,14 @@ const tools = [
         title: "Initialize Argos",
         description: "Initialize a graph-native knowledge base at the target workspace root.",
         inputSchema: schema({ root: rootProperty, name: optionalStringProp("Human-readable target name.") }, ["root"]),
-        handler: ({ root, name }) => (0, db_1.initializeArgos)(rootValue(root), maybeString(name))
+        handler: ({ root, name }) => initializeWithSync(rootValue(root), maybeString(name))
     },
     {
         name: "argos_status",
         title: "Read Argos Status",
         description: "Return knowledge graph counts, schema version, and node-type distribution.",
         inputSchema: schema({ root: rootProperty }, ["root"]),
-        handler: ({ root }) => withDb(rootValue(root), (db) => db.status())
+        handler: ({ root }) => statusWithSync(rootValue(root))
     },
     {
         name: "argos_vocabulary_add",
@@ -138,7 +139,7 @@ const tools = [
     {
         name: "argos_inspect_node",
         title: "Inspect Node And Its Research Context",
-        description: "Return one canonical note with a bounded graph, objective coverage gaps, nearby sink paths, and pending relation suggestions in one compact recovery call.",
+        description: "Return one canonical note with a bounded graph, objective coverage gaps, directed technical sink paths, separate context relations, and pending relation suggestions.",
         inputSchema: schema({
             root: rootProperty,
             id: stringProp("Canonical node ID."),
@@ -226,7 +227,7 @@ const tools = [
     {
         name: "argos_find_chains",
         title: "Find Sink Paths",
-        description: "Find bounded graph paths from one node to other sinks. A sink becomes a gadget through its role in a path; Argos does not infer exploitability.",
+        description: "Find bounded directed paths to sinks through technical relations. Context, evidence, ownership, and provenance links never bridge a chain; Argos does not infer exploitability.",
         inputSchema: schema({
             root: rootProperty,
             fromId: stringProp("Starting node, usually a sink."),
@@ -238,7 +239,7 @@ const tools = [
     {
         name: "argos_find_gaps",
         title: "Find Knowledge Gaps",
-        description: "Surface objective graph conditions such as partial path coverage, conditional boundary coverage, mixed evidence, conclusions followed by new relations, missing authority or state context, old notes, and pending relation suggestions. These are inspection prompts, not verdicts.",
+        description: "Surface structural conditions such as partial premise or sink coverage, missing technical, authority, or state context, later premise changes, intel-only conclusions, old notes, and pending links. These are inspection prompts, not verdicts.",
         inputSchema: schema({ root: rootProperty, id: optionalStringProp("Optional node ID. Omit to inspect sinks and hypotheses."), ageDays: integerProp("Age notice threshold.", 1, 100_000) }, ["root"]),
         handler: ({ root, id, ageDays }) => withDb(rootValue(root), (db) => db.gaps(maybeString(id), optionalNumber(ageDays)))
     },
@@ -265,7 +266,35 @@ const tools = [
             output: optionalStringProp("Output vault path. Defaults to <root>/.argos/obsidian."),
             prune: booleanProp("Remove stale Argos-generated files listed in the previous manifest.")
         }, ["root"]),
-        handler: ({ root, output, prune }) => withDb(rootValue(root), (db) => (0, obsidian_1.exportObsidian)(db, maybeString(output), prune === true))
+        handler: ({ root, output, prune }) => withDb(rootValue(root), (db) => (0, obsidian_1.exportObsidian)(db, maybeString(output), prune === true), false)
+    },
+    {
+        name: "argos_obsidian_sync",
+        title: "Manage Automatic Obsidian Sync",
+        description: "Read, refresh, configure, or stop the automatic on-use Obsidian projection. Normal Argos calls refresh it when the configured interval has elapsed.",
+        inputSchema: schema({
+            root: rootProperty,
+            action: enumProp(["status", "enable", "refresh", "disable"], "Sync action."),
+            output: optionalStringProp("Optional vault path used by enable."),
+            intervalSeconds: integerProp("Seconds between change checks and exports.", 1, 86_400),
+            prune: booleanProp("Remove unchanged stale generated files during each export.")
+        }, ["root", "action"]),
+        handler: ({ root, action, output, intervalSeconds, prune }) => {
+            const targetRoot = rootValue(root);
+            const selected = enumValue(action, ["status", "enable", "refresh", "disable"]);
+            if (selected === "enable") {
+                return (0, obsidian_sync_1.enableObsidianSync)(targetRoot, {
+                    output: maybeString(output),
+                    intervalSeconds: optionalNumber(intervalSeconds),
+                    prune: optionalBoolean(prune)
+                });
+            }
+            if (selected === "disable")
+                return (0, obsidian_sync_1.disableObsidianSync)(targetRoot);
+            if (selected === "refresh")
+                return (0, obsidian_sync_1.refreshObsidianSync)(targetRoot);
+            return (0, obsidian_sync_1.ensureObsidianSync)(targetRoot);
+        }
     },
     {
         name: "argos_opencode_install",
@@ -552,14 +581,27 @@ async function handleLine(line) {
         }
     }
 }
-function withDb(root, action) {
+function withDb(root, action, synchronize = true) {
     const db = new db_1.ArgosDb(root);
+    let result;
     try {
-        return action(db);
+        result = action(db);
     }
     finally {
         db.close();
     }
+    if (synchronize)
+        (0, obsidian_sync_1.ensureObsidianSync)(root);
+    return result;
+}
+function initializeWithSync(root, name) {
+    const result = (0, db_1.initializeArgos)(root, name);
+    (0, obsidian_sync_1.ensureObsidianSync)(root);
+    return { ...result, obsidianSync: (0, obsidian_sync_1.readObsidianSyncStatus)(root) };
+}
+function statusWithSync(root) {
+    const result = withDb(root, (db) => db.status());
+    return { ...result, obsidianSync: (0, obsidian_sync_1.readObsidianSyncStatus)(root) };
 }
 function toolResult(value) {
     const structuredContent = isObject(value) ? value : { result: value };

@@ -8,6 +8,7 @@ exports.argosDir = argosDir;
 exports.knowledgePath = knowledgePath;
 exports.configPath = configPath;
 exports.defaultVaultPath = defaultVaultPath;
+exports.obsidianSyncStatePath = obsidianSyncStatePath;
 exports.chimeraDir = chimeraDir;
 exports.chimeraDbPath = chimeraDbPath;
 exports.chimeraSessionsDir = chimeraSessionsDir;
@@ -32,6 +33,9 @@ function configPath(root) {
 }
 function defaultVaultPath(root) {
     return node_path_1.default.join(argosDir(root), "obsidian");
+}
+function obsidianSyncStatePath(root) {
+    return node_path_1.default.join(argosDir(root), "obsidian-sync.json");
 }
 function chimeraDir(root) {
     return node_path_1.default.join(argosDir(root), "chimera");

@@ -204,6 +204,8 @@ function safeFileName(value: string): string {
     .replace(/[\[\]#^]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
+    .replace(/(?:\.md)+$/gi, "")
+    .trim()
     .replace(/[. ]+$/g, "");
   return (cleaned || "Untitled").slice(0, 120);
 }
