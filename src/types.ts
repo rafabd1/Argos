@@ -103,106 +103,13 @@ export interface KnowledgeInspection {
   };
   map: GraphMap;
   gaps: KnowledgeGap[];
+  chainMode: "directed_technical";
+  technicalRelations: EdgeView[];
+  contextRelations: EdgeView[];
+  technicalChains: ChainPath[];
+  /** Backward-compatible alias for technicalChains. */
   chains: ChainPath[];
   pendingSuggestions: LinkSuggestion[];
   pendingSuggestionCount: number;
   pendingSuggestionsTruncated: boolean;
-}
-
-export type ChimeraStatus = "starting" | "running" | "stopped";
-export type ChimeraAccessMode = "explorer" | "editor";
-
-export interface ChimeraConfig {
-  enabled: boolean;
-  opencodeCommand: string;
-  defaultModel: string | null;
-  defaultVariant: string | null;
-  defaultAgent: string;
-  maxAgents: number;
-  defaultNetwork: boolean;
-  autoApprove: boolean;
-  serverUrl: string | null;
-  serverPid: number | null;
-}
-
-export interface ChimeraSession {
-  id: number;
-  publicId: string;
-  role: string;
-  goal: string;
-  nodeIds: string[];
-  status: ChimeraStatus;
-  accessMode: ChimeraAccessMode;
-  accessNotes: string;
-  model: string | null;
-  variant: string | null;
-  sessionDir: string;
-  labDir: string;
-  opencodeCommand: string;
-  opencodeAgent: string;
-  networkAllowed: boolean;
-  autoApprove: boolean;
-  opencodeServerUrl: string | null;
-  opencodeSessionId: string | null;
-  runPid: number | null;
-  lastError: string | null;
-  createdAt: string;
-  updatedAt: string;
-  stoppedAt: string | null;
-}
-
-export type ChimeraMessageDirection =
-  | "coordinator_to_agent"
-  | "agent_to_coordinator"
-  | "agent_to_agent"
-  | "system";
-
-export interface ChimeraMessage {
-  id: number;
-  publicId: string;
-  sessionId: number | null;
-  direction: ChimeraMessageDirection;
-  fromId: string;
-  toId: string;
-  kind: "message" | "snapshot" | "council" | "system";
-  body: string;
-  priority: boolean;
-  readByCoordinator: boolean;
-  readByAgent: boolean;
-  createdAt: string;
-}
-
-export interface ChimeraWorkflowMessage {
-  ordinal: number;
-  role: "user" | "assistant";
-  createdAt: string | null;
-  text: string;
-  truncated: boolean;
-}
-
-export type CouncilStatus = "inviting" | "open" | "closed";
-
-export interface ChimeraCouncil {
-  id: number;
-  publicId: string;
-  topic: string;
-  participantIds: string[];
-  acceptedIds: string[];
-  status: CouncilStatus;
-  round: number;
-  currentParticipantId: string | null;
-  maxRounds: number;
-  finalMessage: string | null;
-  createdAt: string;
-  updatedAt: string;
-  closedAt: string | null;
-}
-
-export interface ChimeraCouncilTurn {
-  id: number;
-  councilId: string;
-  round: number;
-  speakerId: string;
-  body: string;
-  createdAt: string;
 }

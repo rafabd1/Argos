@@ -32,18 +32,18 @@ for (const relative of [
   "plugins/argos/.mcp.json",
   "plugins/argos/scripts/argos-mcp.cjs",
   "plugins/argos/commands/argos.md",
+  "plugins/argos/skills/finding-report/references/report-template.md",
   "README.md",
   "docs/ARCHITECTURE.md",
   "docs/INSTALLATION.md",
-  "docs/RUNTIME.md",
-  "docs/CHIMERA.md"
+  "docs/RUNTIME.md"
 ]) {
   assert(fs.existsSync(path.join(root, relative)), `Missing packaged file: ${relative}`);
 }
 
 const skillsRoot = path.join(root, "plugins", "argos", "skills");
 const skills = fs.readdirSync(skillsRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory());
-const requiredSkills = ["argos", "chimera-agent", "codebase-mapping", "chain-discovery", "evidence-testing", "adaptive-fuzzing", "exploit-validation", "external-intel", "finding-report"];
+const requiredSkills = ["argos", "codebase-mapping", "chain-discovery", "evidence-testing", "adaptive-fuzzing", "exploit-validation", "external-intel", "finding-report"];
 assert.deepEqual(skills.map((entry) => entry.name).sort(), requiredSkills.sort());
 for (const entry of skills) {
   const file = path.join(skillsRoot, entry.name, "SKILL.md");

@@ -36,9 +36,15 @@ Relations are explicit and directional unless `related_to` is used:
 
 Prefer the most precise relation that the code or evidence proves. Put conditions, version limits, and uncertainty in the connected notes rather than inventing a relation type for every qualifier.
 
+Technical chain traversal uses the recorded direction of `exposes`, `calls`, `flows_to`, `transforms`, `reads`, `writes`, `produces`, `consumes`, `influences`, `crosses`, `runs_as`, and `affects`. A hypothesis may begin with one outgoing `depends_on` step. Structure, evidence, provenance, and weak-association links remain visible as context but do not create a sink path.
+
+`tests` points from a test to the exact item exercised. `supports` and `refutes` connect evidence to a conclusion only when the observed scope warrants that conclusion. Partial evidence can remain linked to a premise without claiming a global verdict.
+
 ## Canonical Identity
 
 Titles identify the real item. Aliases help resolve symbols, paths, old names, and labels. Exact title or alias matches return the canonical node. Strong but ambiguous matches stop creation until the caller reviews them and passes `distinctFrom` for items confirmed to be different.
+
+The visible graph represents current knowledge. When the understanding, version, payload, or proof for an item changes, update its canonical node and let internal revisions retain the former text. Do not preserve an old representation as a generic node or create a new identity only because historical tests need context. Put that scope in the test or evidence node. Create another node only for an independently existing current item.
 
 If later evidence proves that two nodes are the same item, merge the duplicate into the chosen canonical node with an explicitly reviewed body. The retired ID remains resolvable; its history and graph connections move to the canonical identity.
 

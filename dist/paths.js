@@ -8,15 +8,10 @@ exports.argosDir = argosDir;
 exports.knowledgePath = knowledgePath;
 exports.configPath = configPath;
 exports.defaultVaultPath = defaultVaultPath;
-exports.chimeraDir = chimeraDir;
-exports.chimeraDbPath = chimeraDbPath;
-exports.chimeraSessionsDir = chimeraSessionsDir;
-exports.globalArgosDir = globalArgosDir;
-exports.globalChimeraConfigPath = globalChimeraConfigPath;
+exports.obsidianSyncStatePath = obsidianSyncStatePath;
 exports.ensureDir = ensureDir;
 exports.writeFileAtomic = writeFileAtomic;
 const node_fs_1 = __importDefault(require("node:fs"));
-const node_os_1 = __importDefault(require("node:os"));
 const node_path_1 = __importDefault(require("node:path"));
 function resolveTargetRoot(input) {
     return node_path_1.default.resolve(input ?? process.cwd());
@@ -33,22 +28,8 @@ function configPath(root) {
 function defaultVaultPath(root) {
     return node_path_1.default.join(argosDir(root), "obsidian");
 }
-function chimeraDir(root) {
-    return node_path_1.default.join(argosDir(root), "chimera");
-}
-function chimeraDbPath(root) {
-    return node_path_1.default.join(chimeraDir(root), "runtime.sqlite");
-}
-function chimeraSessionsDir(root) {
-    return node_path_1.default.join(chimeraDir(root), "sessions");
-}
-function globalArgosDir() {
-    return process.env.ARGOS_HOME
-        ? node_path_1.default.resolve(process.env.ARGOS_HOME)
-        : node_path_1.default.join(node_os_1.default.homedir(), ".argos");
-}
-function globalChimeraConfigPath() {
-    return node_path_1.default.join(globalArgosDir(), "chimera", "config.json");
+function obsidianSyncStatePath(root) {
+    return node_path_1.default.join(argosDir(root), "obsidian-sync.json");
 }
 function ensureDir(dir) {
     node_fs_1.default.mkdirSync(dir, { recursive: true });

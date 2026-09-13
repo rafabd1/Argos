@@ -1,6 +1,6 @@
 ---
 name: argos
-description: Build, query, and revise an Argos knowledge graph during deep security research. Use when mapping a target, recovering prior knowledge, recording components or sinks, linking evidence, revisiting conclusions, finding blind spots, exploring chains, or coordinating Chimera co-agents.
+description: Build, query, and revise an Argos knowledge graph during deep security research. Use when mapping a target, recovering prior knowledge, recording components or sinks, linking evidence, revisiting conclusions, finding blind spots, or exploring chains.
 ---
 
 # Argos
@@ -20,17 +20,21 @@ Do not load the whole graph. Expand around the current item, then follow only re
 
 Use `inspect` after search when one node is the likely center. It returns the note, local map, coverage gaps, nearby sink paths, and pending suggestions in one bounded call.
 
+At a useful checkpoint, inspect the active hypothesis and its terminal sinks or boundaries again. This catches changed premises without turning Argos into a campaign manager.
+
 ## One Item, One Node
 
 A node represents one real item. The note body is free-form Markdown.
 
 - Resolve before create.
 - Update the existing node when the same component, sink, test scenario, or hypothesis already exists.
+- Keep the visible node as the current understanding of that item. A changed interpretation, tested version, payload shape, or stronger proof belongs in an update, not a replacement node.
 - Use aliases for symbols, paths, old names, and common labels.
-- Create a distinct node only when it has an independent identity and can change separately.
+- Create a distinct node only when it has an independent identity, still exists in the current map, and can change separately.
 - Link facts instead of repeating them in several notes.
+- Promote a premise from prose to a node when it can be tested, revised, or reused by another conclusion. Do not create a node for every checklist line.
 
-Argos keeps prior note bodies as internal revisions. Do not create a second node as history.
+Argos keeps prior note bodies as internal revisions. Never keep a generic umbrella node or create a second node only to preserve an old test, name, conclusion, or representation. Record the old scope and version in the test or evidence note while the canonical target item stays current.
 If two existing nodes are later proven to be the same item, inspect both and use the explicit merge operation with a reviewed consolidated body. Do not leave parallel canonical identities or discard one note's evidence.
 
 ## Let Relations Change The Work
@@ -56,11 +60,13 @@ Evidence from one path supports a conclusion about that path and its proven cond
 - A safe result at one stage does not prove safety before or after that stage.
 - A prior discard must be reopened when a linked premise changes.
 
-Record the exact scope in natural prose. Add explicit `supports`, `refutes`, `depends_on`, or `supersedes` links where they help later recovery.
+Record the exact scope in natural prose. Point `tests` to the precise item exercised. Add `supports` or `refutes` only when the observed scope covers that conclusion; a primitive-only test stays linked to the primitive. Use `depends_on` for decisive premises and `supersedes` or `refutes` when new knowledge changes an older conclusion.
+
+When older research becomes relevant again, create or recover only the prior conclusion that affects the current work. Link the new evidence to it explicitly. Do not copy a whole legacy log into the graph or silently treat the old verdict as current.
 
 ## Find Missing Combinations
 
-Use relation suggestions and sink paths as prompts for inspection. They do not become facts until checked.
+Use relation suggestions and sink paths as prompts for inspection. They do not become facts until checked. Sink paths follow edge direction and technical relations; ownership, evidence, and provenance links remain context and cannot manufacture a chain.
 
 The gap engine reports what the map establishes, such as a test linked to only part of a sink's recorded inputs or a boundary linked to some paths but not others. Treat each result as a question to settle in code or a test, never as proof of a vulnerability or proof that an unlisted path exists.
 
@@ -80,6 +86,10 @@ The goal is to expose useful combinations, not to manufacture a chain between un
 Every node reports `updatedAt` and `ageDays`. Age is a reason to verify, not a status judgment.
 
 Recheck old knowledge when the target version, nearby component, upstream dependency, configuration default, or threat model changed. Update the same node and use `supersedes` only when a separate item or conclusion truly replaced another.
+
+## Obsidian Projection
+
+Argos checks the Obsidian projection after normal workspace operations. When the configured interval elapsed, it updates the vault before the operation returns and safely prunes only unchanged files owned by an earlier export. Use sync status to see when the next projection is due and sync refresh to force one now. Disable it only when the user does not want automatic export for that workspace.
 
 ## Useful Knowledge
 
@@ -102,25 +112,6 @@ Follow a promising path through the layer that actually implements it. That may 
 Do not call a broad area covered because the visible wrapper was read. State what remains outside the tested scope and connect it to the relevant nodes.
 
 Before treating a candidate as finished, search for realistic impact elevation. Check alternate consumers, stronger authority transitions, durable effects, and combinations with other mapped sinks. Keep the strongest impact that works in a common, correctly configured scenario. Artificially weakened limits, trust, permissions, or isolation do not establish impact.
-
-## Chimera Coordination
-
-Use Chimera for an independent research front that benefits from a different model or a full parallel line of reasoning. Use an ordinary subagent for a small bounded task when one is available.
-
-When starting a co-agent:
-
-- provide a complete goal and stop condition;
-- attach the canonical nodes that explain the target and current lead;
-- include exact scope and access rules;
-- choose `explorer` for read-only target work or `editor` with explicit path rules;
-- override network or autoapproval per session when the front needs a narrower or broader runtime than the user default;
-- reuse an existing session when its goal and context still fit.
-
-Let a Chimera co-agent reason independently. Poll for results at useful checkpoints and intervene for scope changes, blockers, a strong signal, or a needed pivot. Do not supervise each command.
-
-Use `send --priority` to place an urgent message directly into an existing OpenCode session. Use `run` only to recover a stopped session when direct messaging cannot resume it. `start` creates and starts a new session.
-
-Call a council when several active fronts can resolve a pivot, challenge a shared premise, or generate better paths after weak progress. Keep the default two rounds unless another round has a clear decision value. The coordinator opens each round and closes with one conclusion; Argos cues participants in order.
 
 ## Command Reference
 

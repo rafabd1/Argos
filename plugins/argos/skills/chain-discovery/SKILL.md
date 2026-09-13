@@ -9,7 +9,7 @@ A sink becomes a gadget when its output, authority, state change, or side effect
 
 ## Recover The Local Graph
 
-Open the sink node, map two or three hops, and query bounded paths to other sinks. Check old tests and conclusions before proposing new work.
+Open the sink node, map two or three hops, and query bounded paths to other sinks. Technical paths follow the recorded edge direction. `contains`, `supports`, `derived_from`, and other context links help explain the map but do not connect gadgets. Check old tests and conclusions before proposing new work.
 
 For each plausible connection, inspect:
 
@@ -21,7 +21,7 @@ For each plausible connection, inspect:
 - timing windows and order-sensitive guarantees;
 - native or upstream code that interprets the output differently.
 
-Create or accept a relation only after the connection is real. Keep weak ideas as a hypothesis node, not a false graph edge.
+Create or accept a relation only after the connection is real. Keep weak ideas as a hypothesis node, not a false graph edge. If a useful path is absent because one handoff has not been mapped, verify and add that exact technical relation instead of weakening the chain search.
 
 ## Avoid The First Story
 
@@ -31,6 +31,6 @@ When a candidate works at a limited impact, search mapped neighbors for realisti
 
 ## Reopen Killed Paths Carefully
 
-Reopen a discarded hypothesis when a linked premise changed, a previously separate sink now connects, or the old test covered only one path. Update the same hypothesis and link the new evidence. Do not create a replacement node to bypass the old conclusion.
+Reopen a discarded hypothesis when a linked premise changed, a previously separate sink now connects, or the old test covered only one path. Update the same hypothesis and link the new evidence with `refutes` or `supersedes` where it changes the old conclusion. Do not create a replacement node to bypass the old conclusion.
 
 Use `argos chains`, `argos map`, `argos suggest_links`, and targeted search as navigation aids. The code and tests decide whether the path exists.

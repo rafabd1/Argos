@@ -5,7 +5,7 @@ description: Write a concise vulnerability report for an external triager from v
 
 # Finding Report
 
-Write for an external triager with no local context. Follow the user's template exactly when supplied and do not add sections it does not contain.
+Write for an external triager with no local context. Follow the user's template exactly when supplied and do not add sections it does not contain. When no template is supplied, use [references/report-template.md](references/report-template.md).
 
 Use natural, direct language. Explain the flaw, attacker path, and real impact in simple technical terms. Anticipate likely questions inside the summary and PoC details without turning the report into a checklist or legal document.
 

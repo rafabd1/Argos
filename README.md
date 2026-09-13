@@ -8,7 +8,6 @@
   <a href="#install">Install</a> &bull;
   <a href="#quick-start">Quick Start</a> &bull;
   <a href="#knowledge-model">Knowledge Model</a> &bull;
-  <a href="#chimera">Chimera</a> &bull;
   <a href="#documentation">Documentation</a>
 </p>
 
@@ -33,7 +32,7 @@ explicit.
 
 | Canonical knowledge | Linked recovery | Blind-spot checks | Obsidian view |
 | --- | --- | --- | --- |
-| One current note per item, with hidden revision history. | Bounded subgraphs instead of full database dumps. | Partial path coverage, mixed evidence, old premises, and missing context. | Markdown notes, wikilinks, index, and Canvas export. |
+| One current note per item, with hidden revision history. | Bounded subgraphs instead of full database dumps. | Partial path coverage, mixed evidence, old premises, and missing context. | Automatically refreshed Markdown notes, wikilinks, index, and Canvas. |
 
 ## Install
 
@@ -81,7 +80,9 @@ argos export obsidian --root C:\path\to\target
 ```
 
 Argos stores target knowledge in `.argos/knowledge.sqlite`. The default
-Obsidian export is `.argos/obsidian/`.
+Obsidian export is `.argos/obsidian/`. Normal Argos operations refresh it when
+the configured interval has elapsed. Use
+`argos obsidian sync status|refresh|disable` to inspect, force, or disable it.
 
 ## Knowledge Model
 
@@ -105,6 +106,11 @@ recorded under another node type. If two reviewed nodes prove to be the same
 item, an explicit merge preserves their aliases, revisions, and relations under
 one canonical ID. Suggested links stay outside the graph until accepted.
 
+The visible graph reflects current knowledge. When an item's interpretation,
+tested version, or proof changes, update its canonical note and keep the old
+scope in the related test or evidence note. Internal revisions preserve prior
+text without adding historical copies to the map.
+
 Every read includes `updatedAt` and `ageDays`. An update refreshes that age only
 when the canonical note changes. Old knowledge remains available as prior
 evidence and signals when revalidation may be useful.
@@ -113,38 +119,23 @@ evidence and signals when revalidation may be useful.
 
 `argos search` combines full-text search, token overlap, code and path
 identifiers, and bounded graph expansion. `argos inspect` returns the current
-note, its local map, objective coverage gaps, nearby sink paths, and pending
-link suggestions in one response.
+note, its local map, objective coverage gaps, directed technical sink paths,
+separate context relations, and pending link suggestions in one response.
 
 `argos gaps` can surface cases where:
 
 - a sink has several recorded inputs but its tests cover only part of them;
 - a boundary is linked to some input paths and not the others;
 - a hypothesis has both supporting and refuting evidence;
-- new relations appeared after the latest refutation;
+- a hypothesis has untested premises or a test that stops before its terminal sink;
+- a behavior reaches a sink that has no exact test relation;
+- technical or premise relations appeared after the latest refutation;
 - linked knowledge changed after the latest refutation;
+- a conclusion relies only on historical intel;
+- a reopened refuted hypothesis lacks an explicit change relation;
 - a sink lacks mapped authority, state, flow, or test context.
 
 These results guide inspection. Code and evidence decide the conclusion.
-
-## Chimera
-
-Chimera is optional. It runs independent OpenCode co-agents with a persistent
-session, a private lab, selected graph context, scoped access, direct messages,
-workflow snapshots, and ordered councils.
-
-Install and configure OpenCode through its
-[official repository](https://github.com/anomalyco/opencode), then set the
-user-wide Chimera defaults:
-
-```powershell
-argos chimera config init --opencode-command opencode --model provider/model --variant high --max-agents 5
-argos chimera doctor --root C:\path\to\target
-```
-
-Starting a co-agent launches it immediately. Existing sessions can receive
-priority messages through OpenCode; `run` is reserved for explicit recovery of
-a stopped worker. See [Chimera](docs/CHIMERA.md) for the full flow.
 
 ## Development
 
@@ -154,15 +145,13 @@ npm test
 ```
 
 The test suite checks TypeScript, CLI and MCP behavior, canonical identity,
-concurrent writes, graph retrieval, Obsidian export, OpenCode project setup,
-Chimera messaging, session recovery, and a two-round council.
+concurrent writes, graph retrieval, Obsidian export, and OpenCode project setup.
 
 ## Documentation
 
 - [Installation](docs/INSTALLATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [CLI and MCP](docs/RUNTIME.md)
-- [Chimera](docs/CHIMERA.md)
 
 ## License
 

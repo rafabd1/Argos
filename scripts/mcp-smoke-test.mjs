@@ -11,7 +11,11 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const serverPath = path.join(repo, "dist", "mcp.js");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "argos-mcp-smoke-"));
 const target = path.join(temp, "target");
-const env = { ...process.env, ARGOS_HOME: path.join(temp, "home"), OPENCODE_COMMAND: process.execPath };
+const env = {
+  ...process.env,
+  ARGOS_DISABLE_OBSIDIAN_SYNC: "1",
+  OPENCODE_COMMAND: process.execPath
+};
 fs.mkdirSync(target, { recursive: true });
 const child = spawn(process.execPath, [serverPath], { env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
 const lines = readline.createInterface({ input: child.stdout });
@@ -33,9 +37,11 @@ try {
   const initialized = await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } });
   assert.equal(initialized.serverInfo.name, "argos");
   const listed = await request("tools/list", {});
-  assert(listed.tools.length >= 30, `Expected complete MCP surface, got ${listed.tools.length}`);
+  assert(listed.tools.length >= 24, `Expected complete MCP surface, got ${listed.tools.length}`);
   assert(listed.tools.some((tool) => tool.name === "argos_inspect_node"));
   assert(listed.tools.some((tool) => tool.name === "argos_opencode_install"));
+  assert(listed.tools.some((tool) => tool.name === "argos_obsidian_sync"));
+  assert.equal(listed.tools.some((tool) => tool.name.startsWith("argos_chimera_")), false);
   for (const tool of listed.tools) {
     assert.equal(tool.inputSchema.type, "object", `${tool.name} schema type`);
     assert.equal(tool.inputSchema.additionalProperties, false, `${tool.name} must reject unknown top-level fields`);
@@ -43,6 +49,11 @@ try {
 
   const init = await call("argos_init", { root: target, name: "MCP target" });
   assert.equal(init.structuredContent.initialized, true);
+  assert.equal(init.structuredContent.obsidianSync.environmentDisabled, true);
+  assert.equal(init.structuredContent.obsidianSync.mode, "on_use");
+  const syncStatus = await call("argos_obsidian_sync", { root: target, action: "status" });
+  assert.equal(syncStatus.structuredContent.mode, "on_use");
+  assert.equal(syncStatus.structuredContent.environmentDisabled, true);
   const component = await call("argos_create_node", { root: target, type: "component", title: "MCP component", content: "Owns the test route.", aliases: ["McpComponent"], distinctFrom: [] });
   const sink = await call("argos_create_node", { root: target, type: "sink", title: "MCP sink", content: "Writes a target object.", aliases: [], distinctFrom: [] });
   assert.equal(component.structuredContent.created, true);
@@ -89,10 +100,10 @@ try {
   const inspection = await call("argos_inspect_node", { root: target, id: sinkId, depth: 2, maxHops: 4, chainLimit: 5 });
   assert.equal(inspection.structuredContent.context.node.publicId, sinkId);
   assert(Array.isArray(inspection.structuredContent.gaps));
+  assert.equal(inspection.structuredContent.chainMode, "directed_technical");
+  assert.deepEqual(inspection.structuredContent.chains, inspection.structuredContent.technicalChains);
   const search = await call("argos_search", { root: target, query: "target object", depth: 1, limit: 10 });
   assert(search.structuredContent.result.some((hit) => hit.node.publicId === sinkId));
-  const config = await call("argos_chimera_config", { action: "show" });
-  assert.equal(config.structuredContent.maxAgents, 5);
   const bad = await call("argos_get_node", { root: target, id: "N999999" });
   assert.equal(bad.isError, true);
 

@@ -84,20 +84,6 @@ is explicit.
 Installing OpenCode project support does not initialize target knowledge. The
 coordinator can run `argos init` at the workspace root when needed.
 
-## Chimera
-
-OpenCode is required only for optional Chimera co-agents. Configure its runtime
-once for the current user:
-
-```powershell
-argos chimera config init --opencode-command opencode --model provider/model --variant high --max-agents 5
-argos chimera doctor --root C:\path\to\target
-```
-
-Global settings live under `~/.argos/chimera/config.json`, or under
-`$ARGOS_HOME/chimera/config.json` when `ARGOS_HOME` is set. Target sessions and
-labs remain under `<root>/.argos/chimera/`.
-
 ## Verify
 
 ```powershell

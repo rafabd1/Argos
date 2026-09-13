@@ -40,6 +40,12 @@ review instead of silently creating a second representation of the same item.
 - A reviewed merge requires a consolidated body, rewires relations, retains
   both histories, and redirects the retired ID to the canonical node.
 
+The visible node describes the current item. Changes in understanding, tested
+version, payload shape, or proof update that node; internal revisions retain the
+old text. A historical test records its own scope and does not need a generic
+copy of the target item. A separate node is valid only when both items exist
+independently in the current map.
+
 Identity resolution and insertion run in one immediate transaction. Parallel
 attempts to create the same item resolve to one node.
 
@@ -54,7 +60,8 @@ distance, timestamps, and age.
 
 - the complete canonical note and direct relations;
 - a bounded neighborhood of compact node summaries;
-- nearby paths to other sinks;
+- directed technical paths to other sinks;
+- direct technical and contextual relations in separate arrays;
 - objective graph gaps;
 - pending relation suggestions touching the node.
 
@@ -81,10 +88,12 @@ Acceptance validates the chosen relation and creates the edge in the same
 transaction that marks the suggestion accepted. Duplicate edges return the
 existing edge.
 
-`chains` performs a bounded graph traversal from one node to other sinks. It
-returns every edge and its direction. A returned path is a navigation aid; it
-does not assert that data can traverse the full path or that the sinks form an
-exploit.
+`chains` performs a bounded directed traversal from one node to other sinks.
+It follows execution, data, boundary, state, and effect relations. A hypothesis
+may use one outgoing `depends_on` edge to enter a technical path. Structure,
+evidence, provenance, and weak-association edges stay in the inspection context
+and cannot bridge two sinks. A returned path remains a navigation aid; it does
+not assert exploitability.
 
 ## Blind-Spot Checks
 
@@ -97,8 +106,14 @@ decisions. Checks include:
 - several recorded sink inputs with tests linked to only part of them;
 - a boundary linked to some direct sink inputs but not the rest;
 - both supporting and refuting evidence on one hypothesis;
+- hypothesis premises not covered by conclusion-linked tests;
+- conclusion-linked tests that stop before a terminal sink;
+- a hypothesis whose premises do not reach a sink through directed technical links;
+- a behavior that reaches a sink with no exact test relation;
+- conclusions supported or refuted only by intel;
+- a reopened refuted hypothesis with no explicit change relation;
 - a refutation whose test covers only part of the recorded sink inputs;
-- graph relations added after the latest refuting evidence;
+- technical, premise, guarantee, or supersession relations added after the latest refuting evidence;
 - linked notes updated after the latest refuting evidence;
 - old knowledge next to newer linked knowledge;
 - explicit supersession and pending link suggestions;
@@ -128,17 +143,7 @@ Target knowledge lives in:
 
 Writes use WAL mode, SQLite busy retries, immediate transactions for compound
 operations, and a process-wide file lock shared by every Argos CLI and MCP
-process for that database. Message creation, message consumption, session
-claims, and council turns use the same pattern.
-
-Chimera runtime state uses a separate database:
-
-```text
-<root>/.argos/chimera/runtime.sqlite
-```
-
-Operational sessions and chat records therefore do not become target knowledge
-nodes.
+process for that database.
 
 ## Obsidian Projection
 
@@ -154,6 +159,18 @@ that was edited after export and reports the count. Files inherited from a
 legacy manifest without hashes are also preserved because their state cannot be
 verified.
 
+After each successful Argos operation, an on-use synchronizer checks the last
+export time. It refreshes the projection when the 30-second default interval has
+elapsed. A short state lock claims each export, so concurrent agents do not
+project the same interval twice.
+The export itself uses the same database snapshot and vault lock as a manual
+export. `.argos/obsidian-sync.json` stores the relative or external destination,
+interval, last attempt, last export, result, and error.
+
+No process stays open between calls. Internal vault paths are stored relative
+to the current tool root, so they follow a moved or copied workspace. An
+external custom vault path remains absolute. No database migration is needed.
+
 ## Interfaces
 
 The CLI and MCP server call the same TypeScript domain methods. MCP schemas
@@ -162,5 +179,4 @@ text copy for hosts that do not consume structured content.
 
 Plugin packages expose the same skills and MCP runtime to Codex and Claude Code.
 OpenCode project support installs local skills, instructions, `/argos`, and MCP
-wiring. Chimera uses OpenCode as an optional co-agent runtime and remains
-separate from OpenCode acting as the main coordinator.
+wiring so OpenCode can use Argos as the main research interface.
