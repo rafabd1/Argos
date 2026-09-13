@@ -1,0 +1,127 @@
+---
+name: argos
+description: Build, query, and revise an Argos knowledge graph during deep security research. Use when mapping a target, recovering prior knowledge, recording components or sinks, linking evidence, revisiting conclusions, finding blind spots, exploring chains, or coordinating Chimera co-agents.
+---
+
+# Argos
+
+Argos is the research memory. Build a connected account of the target that makes the next decision easier.
+
+## Start From The Map
+
+Use the workspace root for every Argos call. Initialize it once when `.argos/knowledge.sqlite` is absent.
+
+1. Search for the concrete component, symbol, path, sink, behavior, or hypothesis.
+2. Inspect the best canonical node and its bounded map.
+3. Check the node age and any `supersedes`, `supports`, or `refutes` links.
+4. Continue from the strongest open relation or missing proof.
+
+Do not load the whole graph. Expand around the current item, then follow only relations that can change the research decision.
+
+Use `inspect` after search when one node is the likely center. It returns the note, local map, coverage gaps, nearby sink paths, and pending suggestions in one bounded call.
+
+## One Item, One Node
+
+A node represents one real item. The note body is free-form Markdown.
+
+- Resolve before create.
+- Update the existing node when the same component, sink, test scenario, or hypothesis already exists.
+- Use aliases for symbols, paths, old names, and common labels.
+- Create a distinct node only when it has an independent identity and can change separately.
+- Link facts instead of repeating them in several notes.
+
+Argos keeps prior note bodies as internal revisions. Do not create a second node as history.
+If two existing nodes are later proven to be the same item, inspect both and use the explicit merge operation with a reviewed consolidated body. Do not leave parallel canonical identities or discard one note's evidence.
+
+## Let Relations Change The Work
+
+The graph matters when it changes what you inspect next. Refresh the local map whenever new evidence changes any of these:
+
+- a producer or consumer of data;
+- an authority boundary or execution identity;
+- a state transition, order, retry, or lifetime;
+- the scope or provenance of a validation;
+- an assumption used to discard or promote a hypothesis;
+- a sink that can feed another sink.
+
+When one of these changes, revisit linked hypotheses and tests without waiting for the user to point out the connection.
+
+## Keep Conclusions Narrow
+
+Evidence from one path supports a conclusion about that path and its proven conditions.
+
+- A limit on one producer does not bound every producer.
+- A guard's presence does not prove where its parameters came from or which alternate routes bypass it.
+- A normal-path test does not settle direct callers, retries, stale state, native code, upstream dependencies, or other consumers.
+- A safe result at one stage does not prove safety before or after that stage.
+- A prior discard must be reopened when a linked premise changes.
+
+Record the exact scope in natural prose. Add explicit `supports`, `refutes`, `depends_on`, or `supersedes` links where they help later recovery.
+
+## Find Missing Combinations
+
+Use relation suggestions and sink paths as prompts for inspection. They do not become facts until checked.
+
+The gap engine reports what the map establishes, such as a test linked to only part of a sink's recorded inputs or a boundary linked to some paths but not others. Treat each result as a question to settle in code or a test, never as proof of a vulnerability or proof that an unlisted path exists.
+
+For a meaningful sink:
+
+- map its inputs, transformations, authority, state, and outputs;
+- inspect other producers of the same data and consumers of its output;
+- ask whether its side effect becomes a useful gadget under another component's authority or timing;
+- query paths to related sinks;
+- review nearby tests and old conclusions;
+- suggest links, then accept only the relation the code or evidence supports.
+
+The goal is to expose useful combinations, not to manufacture a chain between unrelated behaviors.
+
+## Age And Change
+
+Every node reports `updatedAt` and `ageDays`. Age is a reason to verify, not a status judgment.
+
+Recheck old knowledge when the target version, nearby component, upstream dependency, configuration default, or threat model changed. Update the same node and use `supersedes` only when a separate item or conclusion truly replaced another.
+
+## Useful Knowledge
+
+Keep notes short enough to recover and rich enough to act on. Useful content often includes:
+
+- what the item does and where it lives;
+- concrete inputs, outputs, callers, and side effects;
+- whose authority applies and where it is checked;
+- state or timing that changes behavior;
+- conditions that make a guarantee hold;
+- what was observed, what remains inferred, and what would settle it;
+- the target version or date when that matters.
+
+These are prompts, not a required template. Leave out fields that add no knowledge.
+
+## Research Depth
+
+Follow a promising path through the layer that actually implements it. That may include native code, parsers, protocols, generated code, upstream dependencies, caches, storage formats, workers, or alternate entry points. Use focused fuzzing or a small harness when reading cannot settle behavior.
+
+Do not call a broad area covered because the visible wrapper was read. State what remains outside the tested scope and connect it to the relevant nodes.
+
+Before treating a candidate as finished, search for realistic impact elevation. Check alternate consumers, stronger authority transitions, durable effects, and combinations with other mapped sinks. Keep the strongest impact that works in a common, correctly configured scenario. Artificially weakened limits, trust, permissions, or isolation do not establish impact.
+
+## Chimera Coordination
+
+Use Chimera for an independent research front that benefits from a different model or a full parallel line of reasoning. Use an ordinary subagent for a small bounded task when one is available.
+
+When starting a co-agent:
+
+- provide a complete goal and stop condition;
+- attach the canonical nodes that explain the target and current lead;
+- include exact scope and access rules;
+- choose `explorer` for read-only target work or `editor` with explicit path rules;
+- override network or autoapproval per session when the front needs a narrower or broader runtime than the user default;
+- reuse an existing session when its goal and context still fit.
+
+Let a Chimera co-agent reason independently. Poll for results at useful checkpoints and intervene for scope changes, blockers, a strong signal, or a needed pivot. Do not supervise each command.
+
+Use `send --priority` to place an urgent message directly into an existing OpenCode session. Use `run` only to recover a stopped session when direct messaging cannot resume it. `start` creates and starts a new session.
+
+Call a council when several active fronts can resolve a pivot, challenge a shared premise, or generate better paths after weak progress. Keep the default two rounds unless another round has a clear decision value. The coordinator opens each round and closes with one conclusion; Argos cues participants in order.
+
+## Command Reference
+
+Read [references/commands.md](references/commands.md) for the full CLI and MCP surface. Read [references/knowledge-model.md](references/knowledge-model.md) when choosing node or relation types.

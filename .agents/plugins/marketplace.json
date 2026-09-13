@@ -1,0 +1,20 @@
+{
+  "name": "argos-marketplace",
+  "interface": {
+    "displayName": "Argos Marketplace"
+  },
+  "plugins": [
+    {
+      "name": "argos",
+      "source": {
+        "source": "local",
+        "path": "./plugins/argos"
+      },
+      "policy": {
+        "installation": "INSTALLED_BY_DEFAULT",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "argos",
+  "version": "0.1.0",
+  "description": "A graph-native knowledge system for deep security research.",
+  "author": {
+    "name": "Vyntra Research"
+  },
+  "homepage": "https://github.com/rafabd1/Argos",
+  "repository": "https://github.com/rafabd1/Argos",
+  "license": "GPL-3.0-or-later"
+}

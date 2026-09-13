@@ -1,0 +1,42 @@
+{
+  "name": "argos",
+  "version": "0.1.0",
+  "description": "A graph-native knowledge system for deep security research.",
+  "author": {
+    "name": "Vyntra Research",
+    "url": "https://github.com/Vyntra-Research"
+  },
+  "homepage": "https://github.com/rafabd1/Argos",
+  "repository": "https://github.com/rafabd1/Argos",
+  "license": "GPL-3.0-or-later",
+  "keywords": [
+    "security-research",
+    "knowledge-graph",
+    "vulnerability-research",
+    "obsidian",
+    "multi-agent"
+  ],
+  "skills": "./skills/",
+  "mcpServers": {
+    "argos": {
+      "command": "argos-mcp"
+    }
+  },
+  "interface": {
+    "displayName": "Argos",
+    "shortDescription": "Build and query a connected security knowledge map.",
+    "longDescription": "Argos keeps one canonical Markdown note per target item, links components, sinks, flows, authority, state, tests, and conclusions, retrieves bounded subgraphs, suggests missing relations for review, exports to Obsidian, and can coordinate independent Chimera co-agents through OpenCode.",
+    "developerName": "Vyntra Research",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Write", "Run"],
+    "websiteURL": "https://github.com/rafabd1/Argos",
+    "privacyPolicyURL": "https://github.com/rafabd1/Argos",
+    "termsOfServiceURL": "https://github.com/rafabd1/Argos",
+    "defaultPrompt": [
+      "Initialize an Argos knowledge map for this target.",
+      "Recover the relevant subgraph before continuing this research.",
+      "Find untested relations and plausible sink chains in the current map."
+    ],
+    "brandColor": "#111111"
+  }
+}

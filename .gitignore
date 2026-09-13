@@ -1,0 +1,17 @@
+node_modules/
+dist/
+!dist/
+!dist/**
+!plugins/argos/dist/
+!plugins/argos/dist/**
+.argos/
+coverage/
+*.tgz
+notes/
+*.log
+*.tmp
+*.sqlite-wal
+*.sqlite-shm
+.DS_Store
+Thumbs.db
+desktop.ini

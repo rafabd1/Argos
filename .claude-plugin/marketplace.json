@@ -1,0 +1,22 @@
+{
+  "name": "argos-marketplace",
+  "owner": {
+    "name": "Vyntra Research"
+  },
+  "version": "0.1.0",
+  "description": "Argos plugins for connected, evidence-led security research.",
+  "plugins": [
+    {
+      "name": "argos",
+      "source": "./plugins/argos",
+      "description": "Build and query a connected security knowledge map with optional Chimera co-agents.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Vyntra Research"
+      },
+      "homepage": "https://github.com/rafabd1/Argos",
+      "repository": "https://github.com/rafabd1/Argos",
+      "license": "GPL-3.0-or-later"
+    }
+  ]
+}

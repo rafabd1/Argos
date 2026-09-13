@@ -1,0 +1,49 @@
+{
+  "name": "@rafabd1/argos",
+  "version": "0.1.0",
+  "description": "A graph-native knowledge system for deep security research.",
+  "homepage": "https://github.com/rafabd1/Argos#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rafabd1/Argos.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rafabd1/Argos/issues"
+  },
+  "type": "commonjs",
+  "bin": {
+    "argos": "./dist/cli.js",
+    "argos-mcp": "./dist/mcp.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/sync-plugin-dist.mjs",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "smoke": "npm run build && node scripts/smoke-test.mjs && node scripts/mcp-smoke-test.mjs",
+    "validate:package": "node scripts/package-test.mjs",
+    "test": "npm run check && npm run smoke && npm run validate:package",
+    "prepack": "npm run build"
+  },
+  "files": [
+    "dist/",
+    "plugins/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs/"
+  ],
+  "keywords": [
+    "security-research",
+    "knowledge-graph",
+    "vulnerability-research",
+    "obsidian",
+    "mcp"
+  ],
+  "license": "GPL-3.0-or-later",
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
