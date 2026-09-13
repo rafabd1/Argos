@@ -68,7 +68,7 @@ argos obsidian sync disable
 
 MCP: `argos_export_obsidian`, `argos_obsidian_sync`.
 
-The export writes one note per node, an index, generated wikilinks, and an Obsidian Canvas. Each normal Argos operation refreshes a due projection at the 30-second default interval. `refresh` forces it now. A manual disable persists for that workspace until `enable` turns it back on. Internal vault paths follow the current tool root after a move or copy. Pruning removes only unchanged files listed in the previous Argos export manifest.
+The export writes one note per node, one outgoing wikilink per directed relation, a compact index, and `Argos Explorer.base`. Incoming relations remain readable without creating reverse graph edges. Each normal Argos operation refreshes a due projection at the 30-second default interval. `refresh` forces it now. A manual disable persists for that workspace until `enable` turns it back on. Internal vault paths follow the current tool root after a move or copy. Pruning removes only unchanged files listed in the previous Argos export manifest. Retired generated Canvas files are removed only when their recorded hash still matches.
 
 ## OpenCode Host Setup
 

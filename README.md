@@ -32,7 +32,7 @@ explicit.
 
 | Canonical knowledge | Linked recovery | Blind-spot checks | Obsidian view |
 | --- | --- | --- | --- |
-| One current note per item, with hidden revision history. | Bounded subgraphs instead of full database dumps. | Partial path coverage, mixed evidence, old premises, and missing context. | Automatically refreshed Markdown notes, wikilinks, index, and Canvas. |
+| One current note per item, with hidden revision history. | Bounded subgraphs instead of full database dumps. | Partial path coverage, mixed evidence, old premises, and missing context. | Automatically refreshed Markdown notes, exact graph links, a compact index, and a Bases explorer. |
 
 ## Install
 
@@ -83,6 +83,9 @@ Argos stores target knowledge in `.argos/knowledge.sqlite`. The default
 Obsidian export is `.argos/obsidian/`. Normal Argos operations refresh it when
 the configured interval has elapsed. Use
 `argos obsidian sync status|refresh|disable` to inspect, force, or disable it.
+The projection emits each directed relation once, keeps incoming context in the
+note without duplicating graph links, and provides `Argos Explorer.base` for
+filtered views when the Obsidian Bases core plugin is enabled.
 
 ## Knowledge Model
 

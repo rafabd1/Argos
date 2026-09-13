@@ -21,7 +21,7 @@ const env = {
 
 try {
   const version = run("--version");
-  assert.equal(version.version, "0.1.1");
+  assert.equal(version.version, "0.1.2");
   const initialized = run("init", "--root", target, "--name", "Smoke Target");
   assert.equal(initialized.initialized, true);
   const legacyConfigPath = path.join(target, ".argos", "config.json");
@@ -114,7 +114,53 @@ try {
   const exported = run("export", "obsidian", "--root", target, "--out", vault);
   assert.equal(exported.nodeCount, 8);
   assert(fs.existsSync(path.join(vault, "Argos Index.md")));
-  assert(fs.existsSync(path.join(vault, "Argos Knowledge Graph.canvas")));
+  assert(fs.existsSync(path.join(vault, "Argos Explorer.base")));
+  assert.equal(fs.existsSync(path.join(vault, "Argos Knowledge Graph.canvas")), false);
+  const indexBody = fs.readFileSync(path.join(vault, "Argos Index.md"), "utf8");
+  assert(indexBody.includes("![[Argos Explorer.base]]"));
+  assert.equal((indexBody.match(/\[\[/g) ?? []).length, 1);
+  const projectedNodeNotes = fs.readdirSync(vault, { recursive: true })
+    .map(String)
+    .filter((name) => name.endsWith(".md") && name !== "Argos Index.md");
+  const projectedRelationLinks = projectedNodeNotes.reduce((count, relative) => {
+    const body = fs.readFileSync(path.join(vault, relative), "utf8");
+    return count + (body.match(/^- .*\[\[/gm) ?? []).length;
+  }, 0);
+  assert.equal(projectedRelationLinks, exported.edgeCount);
+  const incomingOnlyNote = fs.readdirSync(vault, { recursive: true }).map(String).find((name) => name.includes("Build hook execution"));
+  assert(incomingOnlyNote);
+  const incomingOnlyBody = fs.readFileSync(path.join(vault, incomingOnlyNote), "utf8");
+  assert(incomingOnlyBody.includes("### Incoming"));
+  assert.equal(incomingOnlyBody.includes("[["), false);
+  assert(incomingOnlyBody.includes("argos_relation_count:"));
+  assert(incomingOnlyBody.includes("argos_stale: true"));
+
+  const initialManifestPath = path.join(vault, ".argos-export.json");
+  const initialManifest = JSON.parse(fs.readFileSync(initialManifestPath, "utf8"));
+  const retiredCanvasPath = path.join(vault, "Argos Knowledge Graph.canvas");
+  fs.writeFileSync(retiredCanvasPath, '{"nodes":[],"edges":[]}\n');
+  initialManifest.generatedFiles.push("Argos Knowledge Graph.canvas");
+  initialManifest.sha256ByFile["Argos Knowledge Graph.canvas"] = sha256(retiredCanvasPath);
+  fs.writeFileSync(initialManifestPath, `${JSON.stringify(initialManifest, null, 2)}\n`);
+  const unmanagedLegacyNote = path.join(vault, "Argos Knowledge Graph.md");
+  fs.writeFileSync(unmanagedLegacyNote, "");
+  const migratedExport = run("export", "obsidian", "--root", target, "--out", vault);
+  assert.equal(migratedExport.filesPruned, 1);
+  assert.equal(fs.existsSync(retiredCanvasPath), false);
+  assert.equal(fs.existsSync(unmanagedLegacyNote), true);
+  assert(migratedExport.legacyFilesPreserved.includes(unmanagedLegacyNote));
+
+  const preservedManifest = JSON.parse(fs.readFileSync(initialManifestPath, "utf8"));
+  fs.writeFileSync(retiredCanvasPath, '{"nodes":[],"edges":[]}\n');
+  preservedManifest.generatedFiles.push("Argos Knowledge Graph.canvas");
+  preservedManifest.sha256ByFile["Argos Knowledge Graph.canvas"] = sha256(retiredCanvasPath);
+  fs.appendFileSync(retiredCanvasPath, "user change\n");
+  fs.writeFileSync(initialManifestPath, `${JSON.stringify(preservedManifest, null, 2)}\n`);
+  const preservedCanvasExport = run("export", "obsidian", "--root", target, "--out", vault);
+  assert.equal(preservedCanvasExport.modifiedFilesPreserved, 1);
+  assert.equal(fs.existsSync(retiredCanvasPath), true);
+  assert(preservedCanvasExport.legacyFilesPreserved.includes(retiredCanvasPath));
+  fs.unlinkSync(retiredCanvasPath);
   const concurrentExports = await Promise.all(Array.from({ length: 2 }, () => runAsync("export", "obsidian", "--root", target, "--out", vault)));
   assert(concurrentExports.every((result) => result.nodeCount === 8));
   const sinkNote = fs.readdirSync(vault, { recursive: true }).map(String).find((name) => name.includes("Archive file write"));
@@ -361,7 +407,9 @@ try {
   assert.equal(syncInit.obsidianSync.automatic, true);
   assert.equal(syncInit.obsidianSync.mode, "on_use");
   const firstSync = await waitForObsidianSync(syncTarget, syncEnv, (status) => status.lastResult?.nodeCount === 0 && !status.due);
-  assert(fs.existsSync(firstSync.lastResult.canvasPath));
+  assert(fs.existsSync(firstSync.lastResult.indexPath));
+  assert(fs.existsSync(firstSync.lastResult.explorerPath));
+  assert.equal(fs.existsSync(path.join(firstSync.output, "Argos Knowledge Graph.canvas")), false);
   const storedSync = JSON.parse(fs.readFileSync(path.join(syncTarget, ".argos", "obsidian-sync.json"), "utf8"));
   assert.equal(storedSync.output, ".argos/obsidian");
   assert.equal("root" in storedSync, false);

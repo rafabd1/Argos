@@ -123,6 +123,12 @@ elapsed. A due export runs before that command returns and uses safe pruning.
 `refresh` forces it immediately. A manual disable remains in effect for that
 workspace until `enable` turns it back on.
 
+The vault contains one Markdown note per canonical node, `Argos Index.md`, and
+`Argos Explorer.base`. Only outgoing relations create wikilinks, so one Argos
+edge produces one Obsidian graph edge. Incoming relations remain readable in
+the target note without adding a reverse link. The index reports graph health
+and embeds filtered Bases views without linking every note to a central file.
+
 The state contains no persistent process or fixed workspace root. Internal
 vault paths follow the `root` passed by the current tool after a move or copy.
 External custom vault paths remain unchanged.
@@ -133,6 +139,11 @@ manifest and contained inside the output directory. Hashes protect stale files
 that a user edited after export; those files are retained and counted as
 `modifiedFilesPreserved`. The same fail-safe applies to files inherited from a
 legacy manifest that has no hash.
+
+Exports from Argos 0.1.1 may contain `Argos Knowledge Graph.canvas`. The next
+export removes it when the prior manifest hash still matches. A modified Canvas
+or an unmanaged `Argos Knowledge Graph.md` is preserved and listed in
+`legacyFilesPreserved`.
 
 MCP: `argos_export_obsidian`, `argos_obsidian_sync`.
 

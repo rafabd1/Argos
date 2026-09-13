@@ -284,7 +284,7 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_export_obsidian",
     title: "Export Obsidian Vault",
-    description: "Export one Markdown note per canonical node, generated wikilinks, an index, and an Obsidian Canvas. Pruning removes only files recorded in the prior Argos export manifest.",
+    description: "Export one Markdown note per canonical node, one graph link per directed relation, a compact index, and an Obsidian Bases explorer. Pruning removes only files recorded in the prior Argos export manifest.",
     inputSchema: schema({
       root: rootProperty,
       output: optionalStringProp("Output vault path. Defaults to <root>/.argos/obsidian."),

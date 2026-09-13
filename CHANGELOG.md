@@ -2,6 +2,22 @@
 
 All notable changes to Argos are documented here.
 
+## [0.1.2] - 2026-09-13
+
+### Added
+
+- `Argos Explorer.base` with filtered views for all knowledge, findings, hypotheses, tests, stale notes, and isolated notes.
+- Obsidian note properties for age, revalidation state, relation counts, and relation types.
+- A compact index with node, relation, age, and isolation summaries.
+
+### Changed
+
+- Each directed Argos relation now creates one Obsidian wikilink from its source note; incoming context remains readable without duplicating the graph edge.
+
+### Removed
+
+- Generated Obsidian Canvas files and the all-notes index hub. An unchanged managed Canvas is pruned automatically, while modified or unmanaged legacy files are preserved and reported.
+
 ## [0.1.1] - 2026-09-12
 
 ### Added
