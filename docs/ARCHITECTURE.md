@@ -43,6 +43,16 @@ review instead of silently creating a second representation of the same item.
 - An explicit removal deletes a node that never belonged in target knowledge,
   along with its relations, suggestions, and redirects.
 
+The first `target` is the graph root. Every later inserted node carries one
+initial relation to an existing canonical node. Argos validates and writes the
+node and edge in the same transaction, and rolls both back on failure. The
+initial edge must name a concrete relation; `related_to` cannot serve as a
+generic attachment. This keeps the map connected while leaving later
+cross-links free to represent flows, authority, state, evidence, and chains.
+Direct target links are limited to `contains` edges for top-level components,
+boundaries, principals, and target-wide notes. Detailed nodes must sit under or
+beside the exact item they describe.
+
 The visible node describes the current item. Changes in understanding, tested
 version, payload shape, or proof update that node. A separate test or evidence
 node is valid only when it represents an independently useful current item.
@@ -156,6 +166,9 @@ contains the stable Argos ID, type, aliases, timestamps, age, revalidation
 signal, relation counts, and relation types. Each directed relation creates one
 wikilink from its source note. Incoming context remains visible as plain text,
 so the global graph does not receive a reverse copy of the same edge.
+Literal wikilink syntax in a canonical note body is escaped only in the
+projection, which prevents route names and examples from appearing as extra
+Obsidian nodes. SQLite content remains unchanged.
 
 `Argos Index.md` summarizes node types, relation types, stale knowledge, and
 isolated notes without linking every note into an artificial hub. It embeds

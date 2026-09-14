@@ -48,6 +48,8 @@ try {
     assert.equal(tool.inputSchema.type, "object", `${tool.name} schema type`);
     assert.equal(tool.inputSchema.additionalProperties, false, `${tool.name} must reject unknown top-level fields`);
   }
+  const createTool = listed.tools.find((tool) => tool.name === "argos_create_node");
+  assert.equal(createTool.inputSchema.properties.initialRelation.additionalProperties, false);
 
   const init = await call("argos_init", { root: target, name: "MCP target" });
   assert.equal(init.structuredContent.initialized, true);
@@ -56,12 +58,50 @@ try {
   const syncStatus = await call("argos_obsidian_sync", { root: target, action: "status" });
   assert.equal(syncStatus.structuredContent.mode, "on_use");
   assert.equal(syncStatus.structuredContent.environmentDisabled, true);
-  const component = await call("argos_create_node", { root: target, type: "component", title: "MCP component", content: "Owns the test route.", aliases: ["McpComponent"], distinctFrom: [] });
-  const sink = await call("argos_create_node", { root: target, type: "sink", title: "MCP sink", content: "Writes a target object.", aliases: [], distinctFrom: [] });
+  const targetNode = await call("argos_create_node", { root: target, type: "target", title: "MCP target", content: "MCP graph root.", aliases: [], distinctFrom: [] });
+  const targetId = targetNode.structuredContent.node.publicId;
+  const rejectedOrphan = await call("argos_create_node", { root: target, type: "component", title: "Detached MCP component", content: "Must roll back.", aliases: [], distinctFrom: [] });
+  assert.equal(rejectedOrphan.isError, true);
+  assert(rejectedOrphan.structuredContent.error.includes("requires an initialRelation"));
+  const rejectedGenericRelation = await call("argos_create_node", {
+    root: target,
+    type: "component",
+    title: "Generic MCP component",
+    initialRelation: { nodeId: targetId, type: "related_to", direction: "incoming" }
+  });
+  assert.equal(rejectedGenericRelation.isError, true);
+  assert(rejectedGenericRelation.structuredContent.error.includes("related_to cannot be used"));
+  const afterRejectedNodes = await call("argos_status", { root: target });
+  assert.equal(afterRejectedNodes.structuredContent.counts.nodes, 1);
+  assert.equal(afterRejectedNodes.structuredContent.counts.isolatedNodes, 0);
+  assert.equal(afterRejectedNodes.structuredContent.counts.broadRootLinks, 0);
+  const component = await call("argos_create_node", {
+    root: target,
+    type: "component",
+    title: "MCP component",
+    content: "Owns the test route.",
+    aliases: ["McpComponent"],
+    distinctFrom: [],
+    initialRelation: { nodeId: targetId, type: "contains", direction: "incoming" }
+  });
+  const componentId = component.structuredContent.node.publicId;
+  assert.equal(component.structuredContent.initialRelation.fromId, targetId);
+  assert.equal(component.structuredContent.initialRelation.toId, componentId);
+  const sink = await call("argos_create_node", {
+    root: target,
+    type: "sink",
+    title: "MCP sink",
+    content: "Writes a target object.",
+    aliases: [],
+    distinctFrom: [],
+    initialRelation: { nodeId: componentId, type: "writes", direction: "incoming" }
+  });
   assert.equal(component.structuredContent.created, true);
   assert.equal(sink.structuredContent.created, true);
-  const componentId = component.structuredContent.node.publicId;
   const sinkId = sink.structuredContent.node.publicId;
+  const rejectedFlatLink = await call("argos_add_link", { root: target, fromId: targetId, type: "contains", toId: sinkId });
+  assert.equal(rejectedFlatLink.isError, true);
+  assert(rejectedFlatLink.structuredContent.error.includes("specific node"));
   const emptyUpdate = await call("argos_update_node", { root: target, id: componentId });
   assert.equal(emptyUpdate.isError, true);
   assert(emptyUpdate.structuredContent.error.includes("requires a title, content, aliases, or exact text edits"));
@@ -95,8 +135,8 @@ try {
   const duplicate = await call("argos_create_node", { root: target, type: "component", title: "MCP component", content: "ignored", aliases: [], distinctFrom: [] });
   assert.equal(duplicate.structuredContent.created, false);
   assert.equal(duplicate.structuredContent.canonical.publicId, componentId);
-  const mergeSource = await call("argos_create_node", { root: target, type: "component", title: "MCP duplicate source", content: "Old identity.", aliases: [] });
-  const mergeDestination = await call("argos_create_node", { root: target, type: "component", title: "MCP duplicate destination", content: "Canonical identity.", aliases: [] });
+  const mergeSource = await call("argos_create_node", { root: target, type: "component", title: "MCP duplicate source", content: "Old identity.", aliases: [], initialRelation: { nodeId: targetId, type: "contains", direction: "incoming" } });
+  const mergeDestination = await call("argos_create_node", { root: target, type: "component", title: "MCP duplicate destination", content: "Canonical identity.", aliases: [], initialRelation: { nodeId: targetId, type: "contains", direction: "incoming" } });
   const merge = await call("argos_merge_nodes", {
     root: target,
     sourceId: mergeSource.structuredContent.node.publicId,
@@ -114,7 +154,7 @@ try {
   assert.equal(wrongType.isError, true);
   assert(wrongType.structuredContent.error.includes("depth"));
   await call("argos_add_link", { root: target, fromId: componentId, type: "writes", toId: sinkId });
-  const removable = await call("argos_create_node", { root: target, type: "artifact", title: "Temporary runtime log", content: "Operational state that does not belong in target knowledge.", aliases: [], distinctFrom: [] });
+  const removable = await call("argos_create_node", { root: target, type: "artifact", title: "Temporary runtime log", content: "Operational state that does not belong in target knowledge.", aliases: [], distinctFrom: [], initialRelation: { nodeId: componentId, type: "supports", direction: "outgoing" } });
   const removableId = removable.structuredContent.node.publicId;
   await call("argos_add_link", { root: target, fromId: removableId, type: "supports", toId: componentId });
   const removed = await call("argos_remove_node", { root: target, id: removableId, reason: "Operational test record" });
@@ -141,7 +181,8 @@ try {
       title: `MCP paged sink ${String(index).padStart(2, "0")}`,
       content: `Compact page entry ${index}. ${"bounded context ".repeat(30)}`,
       aliases: [],
-      distinctFrom: []
+      distinctFrom: [],
+      initialRelation: { nodeId: componentId, type: "writes", direction: "incoming" }
     });
   }
   const longAliases = Array.from({ length: 100 }, (_, index) => `alias-${String(index).padStart(3, "0")}-${"x".repeat(180)}`);
@@ -151,7 +192,8 @@ try {
     title: "MCP payload budget sink",
     content: "Exercises bounded list output. ".repeat(80),
     aliases: longAliases,
-    distinctFrom: []
+    distinctFrom: [],
+    initialRelation: { nodeId: componentId, type: "writes", direction: "incoming" }
   });
   const nodePage = await call("argos_list_nodes", { root: target, type: "sink" });
   assert.equal(nodePage.structuredContent.limit, 20);

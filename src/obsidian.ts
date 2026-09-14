@@ -146,7 +146,7 @@ function renderNote(
     "",
     `# ${node.title}`,
     "",
-    node.content.trim(),
+    escapeObsidianWikiSyntax(node.content.trim()),
     "",
     "<!-- argos:relations:start -->",
     "## Relations",
@@ -171,6 +171,10 @@ function renderNote(
   }
   lines.push("<!-- argos:relations:end -->", "");
   return `${lines.filter((line, index) => !(line === "" && lines[index - 1] === "" && index > 9)).join("\n")}\n`;
+}
+
+function escapeObsidianWikiSyntax(value: string): string {
+  return value.replace(/\[\[/g, "\\[\\[");
 }
 
 function renderIndex(db: ArgosDb, nodes: KnowledgeNode[], edges: EdgeView[], generatedAt: string): string {

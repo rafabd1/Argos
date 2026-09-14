@@ -2,6 +2,17 @@
 
 All notable changes to Argos are documented here.
 
+## [0.1.5] - 2026-09-14
+
+### Changed
+
+- New non-root nodes require a concrete initial relation, written atomically with the node.
+- Status reports legacy isolated nodes and broad root links, then tells agents how to repair them with specific relations.
+
+### Fixed
+
+- Literal wikilink syntax in note bodies no longer creates ghost nodes in Obsidian.
+
 ## [0.1.4] - 2026-09-13
 
 ### Added

@@ -118,7 +118,7 @@ function renderNote(node, edges, fileById, ageNoticeDays) {
         "",
         `# ${node.title}`,
         "",
-        node.content.trim(),
+        escapeObsidianWikiSyntax(node.content.trim()),
         "",
         "<!-- argos:relations:start -->",
         "## Relations",
@@ -145,6 +145,9 @@ function renderNote(node, edges, fileById, ageNoticeDays) {
     }
     lines.push("<!-- argos:relations:end -->", "");
     return `${lines.filter((line, index) => !(line === "" && lines[index - 1] === "" && index > 9)).join("\n")}\n`;
+}
+function escapeObsidianWikiSyntax(value) {
+    return value.replace(/\[\[/g, "\\[\\[");
 }
 function renderIndex(db, nodes, edges, generatedAt) {
     const nodeCounts = new Map();
