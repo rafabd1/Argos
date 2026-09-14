@@ -4,12 +4,12 @@
     "name": "Vyntra Research"
   },
   "version": "0.1.4",
-  "description": "Argos plugins for connected, evidence-led security research.",
+  "description": "Offensive security research framework and agent tools for Codex, OpenCode, and Claude Code.",
   "plugins": [
     {
       "name": "argos",
       "source": "./plugins/argos",
-      "description": "Build and query a connected security knowledge map.",
+      "description": "Build and query an offensive security knowledge map through an MCP server and agent skills.",
       "version": "0.1.4",
       "author": {
         "name": "Vyntra Research"

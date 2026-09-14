@@ -2,7 +2,7 @@
 
 # Argos
 
-**A connected knowledge map for deep security research**
+**An offensive security research framework for Codex, OpenCode, and Claude Code**
 
 <p>
   <a href="#install">Install</a> &bull;
@@ -20,7 +20,8 @@
 
 </div>
 
-Argos keeps a durable map of what a target does, how its parts relate, what has
+Argos is an agent plugin, MCP server, and CLI for offensive security research.
+It keeps a durable map of what a target does, how its parts relate, what has
 been tested, and which conclusions still depend on unproven assumptions. Each
 real item has one canonical Markdown note. Typed links connect components,
 sinks, data, authority, state, tests, evidence, and findings.

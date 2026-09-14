@@ -1,7 +1,7 @@
 {
   "name": "argos",
   "version": "0.1.4",
-  "description": "A graph-native knowledge system for deep security research.",
+  "description": "An offensive security research framework, MCP server, and agent plugin for Codex, OpenCode, and Claude Code.",
   "author": {
     "name": "Vyntra Research",
     "url": "https://github.com/Vyntra-Research"
@@ -23,8 +23,8 @@
   },
   "interface": {
     "displayName": "Argos",
-    "shortDescription": "Build and query a connected security knowledge map.",
-    "longDescription": "Argos keeps one canonical Markdown note per target item, links components, sinks, flows, authority, state, tests, and conclusions, retrieves bounded subgraphs, suggests missing relations for review, and exports the map to Obsidian.",
+    "shortDescription": "Build and query a connected offensive security knowledge map.",
+    "longDescription": "Argos is an offensive security research framework for Codex, OpenCode, and Claude Code. Its MCP server and agent skills keep one canonical Markdown note per target item, link components, sinks, flows, authority, state, tests, and conclusions, retrieve bounded subgraphs, suggest missing relations for review, and export the map to Obsidian.",
     "developerName": "Vyntra Research",
     "category": "Developer Tools",
     "capabilities": ["Interactive", "Write", "Run"],

@@ -1,7 +1,7 @@
 {
   "name": "@rafabd1/argos",
   "version": "0.1.4",
-  "description": "A graph-native knowledge system for deep security research.",
+  "description": "An offensive security research framework, MCP server, and agent plugin for Codex, OpenCode, and Claude Code.",
   "homepage": "https://github.com/rafabd1/Argos#readme",
   "repository": {
     "type": "git",
