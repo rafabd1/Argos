@@ -50,7 +50,7 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_status",
     title: "Read Argos Status",
-    description: "Return knowledge graph counts, schema version, and node-type distribution.",
+    description: "Return knowledge graph counts, schema version, node-type distribution, and an integrity warning when legacy non-target nodes remain isolated.",
     inputSchema: schema({ root: rootProperty }, ["root"]),
     handler: ({ root }) => statusWithSync(rootValue(root))
   },
@@ -82,21 +82,23 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_create_node",
     title: "Create Canonical Node",
-    description: "Create one canonical note for an independently existing current target item. Never store campaign goals, work logs, task state, messages, tool issues, or other operational records as nodes. Update an existing node when its knowledge changes. Exact identities resolve to the existing node, and strong ambiguous matches require explicit distinctFrom acknowledgement.",
+    description: "Create one canonical note and its first reviewed relation in one transaction. The first target node is the only relation-free root; every later node requires initialRelation to a specific existing node. Do not use related_to merely to attach a node. Keep top-level components under the target and attach sinks, data, tests, hypotheses, evidence, and lower-level parts to the exact item they concern. Never store campaign goals, work logs, task state, messages, tool issues, or other operational records as nodes. Update an existing node when its knowledge changes. Exact identities resolve to the existing node, and strong ambiguous matches require explicit distinctFrom acknowledgement.",
     inputSchema: schema({
       root: rootProperty,
       type: stringProp("Node type."),
       title: stringProp("Current canonical item title."),
       content: optionalStringProp("Free-form Markdown knowledge."),
       aliases: stringArrayProp("Alternate names, code symbols, or paths."),
-      distinctFrom: stringArrayProp("Candidate node IDs checked and confirmed to represent independently existing current items.")
+      distinctFrom: stringArrayProp("Candidate node IDs checked and confirmed to represent independently existing current items."),
+      initialRelation: initialRelationProp()
     }, ["root", "type", "title"]),
-    handler: ({ root, type, title, content, aliases, distinctFrom }) => withDb(rootValue(root), (db) => db.createNode({
+    handler: ({ root, type, title, content, aliases, distinctFrom, initialRelation }) => withDb(rootValue(root), (db) => db.createNode({
       type: stringValue(type),
       title: stringValue(title),
       content: maybeString(content),
       aliases: stringArray(aliases),
-      distinctFrom: stringArray(distinctFrom)
+      distinctFrom: stringArray(distinctFrom),
+      initialRelation: initialRelationValue(initialRelation)
     }))
   },
   {
@@ -551,6 +553,20 @@ function stringArrayProp(description: string): JsonObject {
   return { type: "array", items: { type: "string", minLength: 1 }, description };
 }
 
+function initialRelationProp(): JsonObject {
+  return {
+    type: "object",
+    additionalProperties: false,
+    description: "Required for each newly inserted node except the first target root. The relation and node are committed atomically.",
+    properties: {
+      nodeId: stringProp("Existing canonical node ID at the other end of the relation."),
+      type: stringProp("Concrete relation type. related_to is not accepted for initial attachment."),
+      direction: enumProp(["outgoing", "incoming"], "outgoing means new node -> existing node; incoming means existing node -> new node.")
+    },
+    required: ["nodeId", "type", "direction"]
+  };
+}
+
 function nodeTextEditsProp(description: string): JsonObject {
   return {
     type: "array",
@@ -594,6 +610,19 @@ function stringArray(value: unknown): string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new Error("Expected an array of strings");
   return value as string[];
+}
+
+function initialRelationValue(value: unknown): { nodeId: string; type: string; direction: "outgoing" | "incoming" } | undefined {
+  if (value === undefined) return undefined;
+  if (!isObject(value)) throw new Error("Expected initialRelation to be an object");
+  const allowed = new Set(["nodeId", "type", "direction"]);
+  const unknown = Object.keys(value).filter((key) => !allowed.has(key));
+  if (unknown.length > 0) throw new Error(`Unknown initialRelation field: ${unknown[0]}`);
+  return {
+    nodeId: stringValue(value.nodeId),
+    type: stringValue(value.type),
+    direction: enumValue(value.direction, ["outgoing", "incoming"])
+  };
 }
 
 function nodeTextEdits(value: unknown): Array<{ oldText: string; newText: string }> {

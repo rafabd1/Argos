@@ -42,6 +42,21 @@ A node represents one real item. The note body is free-form Markdown.
 - Link facts instead of repeating them in several notes.
 - Promote a premise from prose to a node when it can be tested, revised, or reused by another conclusion. Do not create a node for every checklist line.
 
+Place every new node in the map when you create it. The first `target` is the
+only relation-free root. Put a top-level component under the target with
+`contains`; put a lower-level component under its real owner; and attach data,
+state, sinks, guarantees, tests, hypotheses, evidence, and findings to the
+specific item they describe. Do not attach these items only to the target.
+
+Creation requires one reviewed initial relation and commits the node and edge
+together. `related_to` is not accepted for this first attachment. If creation
+rejects a missing or generic relation, resolve or inspect the right existing
+node and retry with the concrete hierarchy, flow, authority, test, premise, or
+evidence relation. Never invent a weak link merely to make the node pass.
+When `status` reports isolated nodes or broad root links, call `find_gaps`
+without an ID for the actionable node and edge list. Repair each item by adding
+the exact relation first, then remove the stale broad edge.
+
 Argos keeps only the latest body of each canonical node. Use ordered exact edits for small corrections or replace the body when stale text must disappear. Never keep a generic umbrella node or create a second node to preserve an old test, name, conclusion, or representation.
 If two existing nodes are later proven to be the same item, inspect both and use the explicit merge operation with a reviewed consolidated body. Do not leave parallel canonical identities or discard one note's evidence.
 If a campaign or runtime record entered the graph by mistake, remove that node explicitly. Do not remove stale or refuted target knowledge merely because its conclusion changed; edit its current note and relations instead.

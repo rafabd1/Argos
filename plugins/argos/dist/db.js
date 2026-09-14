@@ -34,6 +34,7 @@ const CHAIN_EXCLUDED_NODE_TYPES = new Set([
     "artifact",
     "note"
 ]);
+const TOP_LEVEL_NODE_TYPES = new Set(["component", "boundary", "principal", "note"]);
 class ArgosDb {
     root;
     config;
@@ -55,6 +56,35 @@ class ArgosDb {
     status() {
         const count = (table, where = "") => Number(this.db.prepare(`SELECT COUNT(*) AS count FROM ${table} ${where}`).get().count ?? 0);
         const typeRows = this.db.prepare("SELECT type, COUNT(*) AS count FROM nodes GROUP BY type ORDER BY type").all();
+        const isolatedNodes = Number(this.db.prepare(`SELECT COUNT(*) AS count
+       FROM nodes n
+       WHERE n.type <> 'target'
+         AND NOT EXISTS (
+           SELECT 1 FROM edges e WHERE e.from_node_id = n.id OR e.to_node_id = n.id
+         )`).get().count ?? 0);
+        const broadRootLinks = Number(this.db.prepare(`SELECT COUNT(*) AS count
+       FROM edges e
+       JOIN nodes source ON source.id = e.from_node_id
+       JOIN nodes destination ON destination.id = e.to_node_id
+       WHERE (source.type = 'target' OR destination.type = 'target')
+         AND NOT (
+           source.type = 'target'
+           AND e.type = 'contains'
+           AND destination.type IN ('component', 'boundary', 'principal', 'note')
+         )`).get().count ?? 0);
+        const integrityWarnings = [];
+        if (isolatedNodes > 0) {
+            integrityWarnings.push({
+                code: "isolated_nodes",
+                message: `${isolatedNodes} non-target node(s) have no relation. Inspect each item and add the exact meaningful relation; do not use related_to only to silence this warning.`
+            });
+        }
+        if (broadRootLinks > 0) {
+            integrityWarnings.push({
+                code: "broad_root_links",
+                message: `${broadRootLinks} relation(s) attach detailed knowledge directly to the target instead of its specific owner or subject. Run find_gaps without an id to list them, add the exact hierarchy, flow, test, premise, or evidence relation, then remove the broad target link.`
+            });
+        }
         return {
             initialized: true,
             name: this.config.name,
@@ -63,9 +93,12 @@ class ArgosDb {
             counts: {
                 nodes: count("nodes"),
                 edges: count("edges"),
-                pendingSuggestions: count("link_suggestions", "WHERE status = 'pending'")
+                pendingSuggestions: count("link_suggestions", "WHERE status = 'pending'"),
+                isolatedNodes,
+                broadRootLinks
             },
-            nodeTypes: Object.fromEntries(typeRows.map((row) => [String(row.type), Number(row.count)]))
+            nodeTypes: Object.fromEntries(typeRows.map((row) => [String(row.type), Number(row.count)])),
+            integrityWarnings
         };
     }
     createNode(input) {
@@ -91,15 +124,52 @@ class ArgosDb {
                 outcome = { created: false, resolutionRequired: true, candidates: unresolved };
                 return;
             }
+            const nodeCount = Number(this.db.prepare("SELECT COUNT(*) AS count FROM nodes").get().count ?? 0);
+            if (type === "target" && nodeCount > 0) {
+                throw new Error("Argos has one target root. Update the existing target or create a component beneath it instead of adding another target node.");
+            }
+            const relationRequired = type !== "target" || nodeCount > 0;
+            let relatedNodeId;
+            let relationType;
+            let relationDirection;
+            if (relationRequired) {
+                if (!input.initialRelation) {
+                    throw new Error("A new non-root node requires an initialRelation to an existing canonical node. Resolve the specific parent, producer, consumer, test target, premise, or evidence node and retry; do not use related_to merely to avoid an orphan.");
+                }
+                relationDirection = input.initialRelation.direction;
+                if (relationDirection !== "outgoing" && relationDirection !== "incoming") {
+                    throw new Error("Initial relation direction must be outgoing or incoming");
+                }
+                relationType = (0, vocabulary_1.assertRelationType)(this.config, input.initialRelation.type);
+                if (relationType === "related_to") {
+                    throw new Error("Initial relations must state the concrete connection; related_to cannot be used to attach a new node. Resolve the specific hierarchy or technical relation and retry.");
+                }
+                relatedNodeId = this.resolveNodeId(parseNodeId(input.initialRelation.nodeId));
+                const relatedNode = this.getNode(relatedNodeId);
+                if (relatedNode.type === "target" && (relationDirection !== "incoming"
+                    || relationType !== "contains"
+                    || !TOP_LEVEL_NODE_TYPES.has(type))) {
+                    throw new Error("The target root may contain only top-level component, boundary, principal, or note nodes. Attach detailed knowledge to its specific owner or subject with a concrete relation.");
+                }
+            }
             const now = new Date().toISOString();
             const result = this.db.prepare(`INSERT INTO nodes(type, title, normalized_title, aliases_json, content, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`).run(type, title, normalizeIdentity(title), JSON.stringify(aliases), input.content ?? "", now, now);
             const id = Number(result.lastInsertRowid);
             this.indexNode(id, title, aliases, input.content ?? "");
+            let initialRelation;
+            if (relatedNodeId !== undefined && relationType !== undefined && relationDirection !== undefined) {
+                let fromId = relationDirection === "outgoing" ? id : relatedNodeId;
+                let toId = relationDirection === "outgoing" ? relatedNodeId : id;
+                if (fromId === toId)
+                    throw new Error("A node cannot link to itself");
+                initialRelation = this.addEdgeInternal(fromId, relationType, toId);
+            }
             outcome = {
                 created: true,
                 resolutionRequired: false,
                 node: this.getNode(id),
+                initialRelation,
                 candidates
             };
         });
@@ -470,13 +540,21 @@ class ArgosDb {
         let fromId = this.resolveNodeId(parseNodeId(fromReference));
         let toId = this.resolveNodeId(parseNodeId(toReference));
         const type = (0, vocabulary_1.assertRelationType)(this.config, typeInput);
-        this.getNode(fromId);
-        this.getNode(toId);
+        const from = this.getNode(fromId);
+        const to = this.getNode(toId);
         if (fromId === toId)
             throw new Error("A node cannot link to itself");
+        this.assertAllowedRootRelation(from, type, to);
         if (type === "related_to" && fromId > toId)
             [fromId, toId] = [toId, fromId];
         return this.transaction(() => this.addEdgeInternal(fromId, type, toId));
+    }
+    assertAllowedRootRelation(from, type, to) {
+        if (from.type !== "target" && to.type !== "target")
+            return;
+        if (from.type === "target" && type === "contains" && TOP_LEVEL_NODE_TYPES.has(to.type))
+            return;
+        throw new Error("The target root may only contain top-level component, boundary, principal, or note nodes. Link detailed knowledge to the specific node it concerns.");
     }
     addEdgeInternal(fromId, type, toId) {
         const existing = this.db.prepare("SELECT * FROM edges WHERE from_node_id = ? AND type = ? AND to_node_id = ?").get(fromId, type, toId);
@@ -671,6 +749,7 @@ class ArgosDb {
             let toId = parseNodeId(suggestion.toId);
             if (acceptedRelation === "related_to" && fromId > toId)
                 [fromId, toId] = [toId, fromId];
+            this.assertAllowedRootRelation(this.getNode(fromId), acceptedRelation, this.getNode(toId));
             const edge = this.addEdgeInternal(fromId, acceptedRelation, toId);
             this.db.prepare("UPDATE link_suggestions SET status = 'accepted', relation_type = ?, reviewed_at = ? WHERE id = ?")
                 .run(acceptedRelation, reviewedAt, id);
@@ -692,12 +771,32 @@ class ArgosDb {
         const allNodes = new Map(nodeList.map((node) => [node.publicId, node]));
         const pending = this.listSuggestions("pending", 500);
         const gaps = [];
+        const integrityNodes = reference === undefined ? nodeList : [this.getNode(reference)];
+        for (const node of integrityNodes) {
+            if (node.type === "target")
+                continue;
+            const relatedEdges = edges.filter((edge) => edge.fromId === node.publicId || edge.toId === node.publicId);
+            if (relatedEdges.length === 0) {
+                gaps.push(gap("isolated_node", node, "This node has no graph relations. Add the exact meaningful relation; do not use related_to only to clear the warning.", []));
+            }
+            for (const edge of relatedEdges) {
+                const from = allNodes.get(edge.fromId);
+                const to = allNodes.get(edge.toId);
+                if (from?.type !== "target" && to?.type !== "target")
+                    continue;
+                const allowed = from?.type === "target"
+                    && edge.type === "contains"
+                    && to !== undefined
+                    && TOP_LEVEL_NODE_TYPES.has(to.type);
+                if (allowed)
+                    continue;
+                const targetId = from?.type === "target" ? from.publicId : to.publicId;
+                gaps.push(gap("broad_root_link", node, `${edge.publicId} attaches this detailed node directly to the target. Add its exact parent or subject relation before removing the broad edge.`, [targetId]));
+            }
+        }
         for (const node of nodes) {
             const relatedEdges = edges.filter((edge) => edge.fromId === node.publicId || edge.toId === node.publicId);
             const directNeighbors = relatedEdges.map((edge) => edge.fromId === node.publicId ? edge.toId : edge.fromId);
-            if (relatedEdges.length === 0) {
-                gaps.push(gap("isolated_node", node, "This node has no graph relations.", []));
-            }
             if (node.ageDays >= ageThreshold) {
                 gaps.push(gap("old_knowledge", node, `This note was updated ${node.ageDays} days ago and may need comparison with the current target.`, []));
                 const newerNeighbors = directNeighbors.filter((id) => {

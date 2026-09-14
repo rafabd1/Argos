@@ -162,7 +162,8 @@ async function handleNode(root, subcommand, rest, parsed) {
             title: requiredOption(parsed, "title"),
             content: readContent(parsed) ?? "",
             aliases: listOption(parsed, "aliases"),
-            distinctFrom: listOption(parsed, "distinct-from")
+            distinctFrom: listOption(parsed, "distinct-from"),
+            initialRelation: readInitialRelation(parsed)
         }));
         print(result);
         if (result.resolutionRequired)
@@ -347,7 +348,7 @@ function allowedOptions(command, subcommand, rest) {
         return subcommand === "add" ? ["kind", "name"] : [];
     if (command === "node") {
         if (subcommand === "create")
-            return ["type", "title", "content", "content-file", "aliases", "distinct-from"];
+            return ["type", "title", "content", "content-file", "aliases", "distinct-from", "link-to", "relation", "direction"];
         if (subcommand === "update")
             return ["id", "title", "content", "content-file", "aliases", "mode", "old-text", "new-text", "edits-file"];
         if (subcommand === "remove")
@@ -440,6 +441,19 @@ function readContent(parsed) {
         return node_fs_1.default.readFileSync(node_path_1.default.resolve(file), "utf8");
     return undefined;
 }
+function readInitialRelation(parsed) {
+    const nodeId = option(parsed, "link-to");
+    const type = option(parsed, "relation");
+    const direction = option(parsed, "direction");
+    const supplied = [nodeId, type, direction].filter((value) => value !== undefined).length;
+    if (supplied === 0)
+        return undefined;
+    if (supplied !== 3)
+        throw new Error("Use --link-to, --relation, and --direction together");
+    if (direction !== "outgoing" && direction !== "incoming")
+        throw new Error("--direction must be outgoing or incoming");
+    return { nodeId: nodeId, type: type, direction };
+}
 function readEdits(parsed) {
     const hasFile = parsed.options.has("edits-file");
     const file = option(parsed, "edits-file");
@@ -492,6 +506,7 @@ Usage:
 
   argos node create --type <type> --title <title> [--content <markdown> | --content-file <path|->]
                     [--aliases <a,b>] [--distinct-from <N...>]
+                    --link-to <N...> --relation <type> --direction outgoing|incoming
   argos node update --id <N...> [--title <title>] [--content <markdown> | --content-file <path|->]
                     [--aliases <a,b>] [--mode replace|append]
                     [--old-text <exact>] [--new-text <replacement>] [--edits-file <path|->]

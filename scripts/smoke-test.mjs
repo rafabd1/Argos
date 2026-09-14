@@ -21,7 +21,7 @@ const env = {
 
 try {
   const version = run("--version");
-  assert.equal(version.version, "0.1.4");
+  assert.equal(version.version, "0.1.5");
   const initialized = run("init", "--root", target, "--name", "Smoke Target");
   assert.equal(initialized.initialized, true);
   const namedDefaultExport = run("export", "obsidian", "--root", target);
@@ -57,7 +57,23 @@ try {
   assert(removedOrchestrationCommand.includes("Unknown command"));
 
   const targetNode = create("target", "Smoke Target", "Version 1.0 target.", ["smoke-app"]);
-  const component = create("component", "Archive importer", "Accepts an archive and emits normalized entries.", ["ArchiveImporter", "src/importer.ts"]);
+  const beforeRejectedOrphan = run("status", "--root", target).counts.nodes;
+  const rejectedOrphan = runFailure("node", "create", "--root", target, "--type", "component", "--title", "Detached component", "--content", "Must roll back.");
+  assert(rejectedOrphan.includes("requires an initialRelation"));
+  assert.equal(run("status", "--root", target).counts.nodes, beforeRejectedOrphan);
+  const rejectedGenericRelation = runFailure(
+    "node", "create", "--root", target, "--type", "component", "--title", "Generic attachment", "--content", "Must roll back.",
+    "--link-to", targetNode.publicId, "--relation", "related_to", "--direction", "incoming"
+  );
+  assert(rejectedGenericRelation.includes("related_to cannot be used"));
+  assert.equal(run("status", "--root", target).counts.nodes, beforeRejectedOrphan);
+  const rejectedFlatSink = runFailure(
+    "node", "create", "--root", target, "--type", "sink", "--title", "Root-level sink", "--content", "Must roll back.",
+    "--link-to", targetNode.publicId, "--relation", "contains", "--direction", "incoming"
+  );
+  assert(rejectedFlatSink.includes("Attach detailed knowledge"));
+  assert.equal(run("status", "--root", target).counts.nodes, beforeRejectedOrphan);
+  const component = create("component", "Archive importer", "Accepts an archive and emits normalized entries. A catch-all route may be written as `[[...slug]]`.", ["ArchiveImporter", "src/importer.ts"]);
   const data = create("data", "Archive entry path", "A path supplied by an imported archive.", ["entry.path"]);
   const sinkA = create("sink", "Archive file write", "Writes a normalized entry under the extraction root.", ["writeEntry"]);
   const state = create("state", "Imported workspace tree", "Files become visible to the build worker after extraction.", ["workspace tree"]);
@@ -73,11 +89,11 @@ try {
   link(component.publicId, "reads", data.publicId);
   link(data.publicId, "flows_to", sinkA.publicId);
   link(sinkA.publicId, "produces", state.publicId);
-  link(state.publicId, "flows_to", sinkB.publicId);
+  const stateToSinkB = link(state.publicId, "flows_to", sinkB.publicId);
   link(test.publicId, "tests", sinkA.publicId);
   link(test.publicId, "refutes", hypothesis.publicId);
   const repeated = link(state.publicId, "flows_to", sinkB.publicId);
-  assert.equal(repeated.publicId, "E000005");
+  assert.equal(repeated.publicId, stateToSinkB.publicId);
 
   const map = run("map", "--root", target, "--id", sinkA.publicId, "--depth", "3");
   assert(map.nodes.some((node) => node.publicId === sinkB.publicId));
@@ -186,9 +202,15 @@ try {
   const projectedNodeNotes = fs.readdirSync(vault, { recursive: true })
     .map(String)
     .filter((name) => name.endsWith(".md") && name !== "Argos Index.md");
+  const componentNote = projectedNodeNotes.find((name) => name.includes("Archive importer"));
+  assert(componentNote);
+  const componentNoteBody = fs.readFileSync(path.join(vault, componentNote), "utf8");
+  assert(componentNoteBody.includes("`\\[\\[...slug]]`"));
+  assert.equal(/(?<!\\)\[\[\.\.\.slug\]\]/.test(componentNoteBody), false);
   const projectedRelationLinks = projectedNodeNotes.reduce((count, relative) => {
     const body = fs.readFileSync(path.join(vault, relative), "utf8");
-    return count + (body.match(/^- .*\[\[/gm) ?? []).length;
+    const relations = body.slice(body.indexOf("<!-- argos:relations:start -->"));
+    return count + (relations.match(/^- .*(?<!\\)\[\[/gm) ?? []).length;
   }, 0);
   assert.equal(projectedRelationLinks, exported.edgeCount);
   const incomingOnlyNote = fs.readdirSync(vault, { recursive: true }).map(String).find((name) => name.includes("Build hook execution"));
@@ -262,16 +284,20 @@ try {
   assert.equal(fs.existsSync(legacyPath), true);
 
   const concurrentNames = ["Quartz", "Nimbus", "Orbit", "Tundra", "Helix", "Cobalt", "Vector", "Lantern"];
-  const concurrent = await Promise.all(concurrentNames.map((name) => runAsync("node", "create", "--root", target, "--type", "note", "--title", name, "--content", "lock test")));
+  const rootAttachment = ["--link-to", targetNode.publicId, "--relation", "contains", "--direction", "incoming"];
+  const concurrent = await Promise.all(concurrentNames.map((name) => runAsync("node", "create", "--root", target, "--type", "note", "--title", name, "--content", "lock test", ...rootAttachment)));
   assert(concurrent.every((result) => result.created));
-  const sameIdentity = await Promise.all(Array.from({ length: 6 }, () => runAsync("node", "create", "--root", target, "--type", "note", "--title", "Canonical concurrent note", "--content", "same identity race")));
+  const sameIdentity = await Promise.all(Array.from({ length: 6 }, () => runAsync("node", "create", "--root", target, "--type", "note", "--title", "Canonical concurrent note", "--content", "same identity race", ...rootAttachment)));
   assert.equal(sameIdentity.filter((result) => result.created).length, 1);
   assert.equal(new Set(sameIdentity.map((result) => (result.node ?? result.canonical).publicId)).size, 1);
   const canonicalConcurrent = sameIdentity[0].node ?? sameIdentity[0].canonical;
-  const sameEdges = await Promise.all(Array.from({ length: 6 }, () => runAsync("link", "add", "--root", target, "--from", targetNode.publicId, "--type", "related_to", "--to", canonicalConcurrent.publicId)));
+  const sameEdges = await Promise.all(Array.from({ length: 6 }, () => runAsync("link", "add", "--root", target, "--from", targetNode.publicId, "--type", "contains", "--to", canonicalConcurrent.publicId)));
   assert.equal(new Set(sameEdges.map((edge) => edge.publicId)).size, 1);
   const status = run("status", "--root", target);
   assert.equal(status.counts.nodes, 17);
+  assert.equal(status.counts.isolatedNodes, 0);
+  assert.equal(status.counts.broadRootLinks, 0);
+  assert.deepEqual(status.integrityWarnings, []);
 
   const mergeSource = create("component", "Legacy archive dispatcher", "The earlier note recorded `ArchiveDispatch.call` and one caller.", ["LegacyArchiveDispatch"]);
   run("node", "update", "--root", target, "--id", mergeSource.publicId, "--mode", "append", "--content", "A later trace showed this is the same dispatcher implementation.");
@@ -308,7 +334,7 @@ try {
   assert.equal(crossTypeReview.resolutionRequired, true);
   assert.equal(crossTypeReview.candidates[0].node.publicId, crossTypeComponent.publicId);
   assert.equal(crossTypeReview.candidates[0].node.type, "component");
-  const reviewedDistinct = run("node", "create", "--root", target, "--type", "sink", "--title", "Shared dispatch operation", "--content", "A separately reviewed sink identity.", "--distinct-from", crossTypeComponent.publicId);
+  const reviewedDistinct = run("node", "create", "--root", target, "--type", "sink", "--title", "Shared dispatch operation", "--content", "A separately reviewed sink identity.", "--distinct-from", crossTypeComponent.publicId, "--link-to", crossTypeComponent.publicId, "--relation", "calls", "--direction", "incoming");
   assert.equal(reviewedDistinct.created, true);
   const contentOnlyUpdate = run("node", "update", "--root", target, "--id", reviewedDistinct.node.publicId, "--mode", "append", "--content", "Cross-type distinction remains explicit.");
   assert(contentOnlyUpdate.content.includes("Cross-type distinction"));
@@ -339,7 +365,7 @@ try {
   assert(boundedContext.incomingTotal > boundedContext.incoming.length || boundedContext.outgoingTotal > boundedContext.outgoing.length);
 
   const suggestionTarget = create("component", "Bridge token adapter", "Consumes `bridge.token` before dispatch.");
-  const suggestionSource = create("behavior", "Shared token propagation", "Carries `bridge.token` between two internal boundaries.");
+  const suggestionSource = create("component", "Shared token propagation", "Carries `bridge.token` between two internal boundaries.");
   const relationCandidates = run("link", "suggest", "--root", target, "--id", suggestionSource.publicId, "--limit", "10");
   const suggested = relationCandidates.find((item) => item.to.publicId === suggestionTarget.publicId);
   assert(suggested, "expected a reviewable relation suggestion");
@@ -353,7 +379,7 @@ try {
   assert.equal(acceptedSuggestion.edge.fromId, suggestionSource.publicId);
   assert.equal(acceptedSuggestion.edge.toId, suggestionTarget.publicId);
   const reconsiderTarget = create("component", "Deferred token consumer", "Consumes `recheck.token` after a delayed transition.");
-  const reconsiderSource = create("behavior", "Deferred token propagation", "Carries `recheck.token` toward a later consumer.");
+  const reconsiderSource = create("component", "Deferred token propagation", "Carries `recheck.token` toward a later consumer.");
   const firstSuggestion = run("link", "suggest", "--root", target, "--id", reconsiderSource.publicId, "--limit", "10")
     .find((item) => item.to.publicId === reconsiderTarget.publicId);
   assert(firstSuggestion);
@@ -366,7 +392,7 @@ try {
   assert.equal(reconsideredSuggestion.status, "pending");
   assert(reconsideredSuggestion.reasons.some((reason) => reason.includes("changed after the previous rejection")));
 
-  const alternateDataResult = run("node", "create", "--root", target, "--type", "data", "--title", "Alternate archive entry path", "--content", "A second producer reaches the same write sink through a different parser.", "--aliases", "alternate.entry.path", "--distinct-from", data.publicId);
+  const alternateDataResult = run("node", "create", "--root", target, "--type", "data", "--title", "Alternate archive entry path", "--content", "A second producer reaches the same write sink through a different parser.", "--aliases", "alternate.entry.path", "--distinct-from", data.publicId, "--link-to", sinkA.publicId, "--relation", "flows_to", "--direction", "outgoing");
   assert.equal(alternateDataResult.created, true);
   const alternateData = alternateDataResult.node;
   link(alternateData.publicId, "flows_to", sinkA.publicId);
@@ -395,7 +421,7 @@ try {
   const graphHypothesis = createAt(graphTarget, "hypothesis", "Confused frame reaches privileged action", "One falsifiable chain proposition.");
   const graphTest = createAt(graphTarget, "test", "Frame confusion primitive test", "Tests only the primitive at first.");
   linkAt(graphTarget, graphRoot.publicId, "contains", graphComponent.publicId);
-  linkAt(graphTarget, graphRoot.publicId, "contains", contextOnlySink.publicId);
+  linkAt(graphTarget, graphComponent.publicId, "contains", contextOnlySink.publicId);
   linkAt(graphTarget, graphHypothesis.publicId, "depends_on", graphBehavior.publicId);
   linkAt(graphTarget, graphHypothesis.publicId, "depends_on", graphData.publicId);
   linkAt(graphTarget, graphBehavior.publicId, "affects", graphComponent.publicId);
@@ -489,19 +515,20 @@ try {
   const manualOnly = runWithEnv(syncEnv, "export", "obsidian", "--root", syncTarget, "--out", manualVault);
   assert(fs.existsSync(manualOnly.manifestPath));
   assert.equal(fs.existsSync(firstSync.output), false);
-  const syncedNode = runWithEnv(syncEnv, "node", "create", "--root", syncTarget, "--type", "component", "--title", "Automatically projected component", "--content", "Written after automatic sync was enabled.").node;
+  const syncRoot = runWithEnv(syncEnv, "node", "create", "--root", syncTarget, "--type", "target", "--title", "Automatic sync target", "--content", "Projection test root.").node;
+  const syncedNode = runWithEnv(syncEnv, "node", "create", "--root", syncTarget, "--type", "component", "--title", "Automatically projected component", "--content", "Written after automatic sync was enabled.", "--link-to", syncRoot.publicId, "--relation", "contains", "--direction", "incoming").node;
   await new Promise((resolve) => setTimeout(resolve, 1_100));
   const concurrentChecks = await Promise.all(Array.from({ length: 4 }, () =>
     runAsyncWithEnv(syncEnv, "obsidian", "sync", "status", "--root", syncTarget)));
   assert(concurrentChecks.every((status) => status.lastError === null));
-  const updatedSync = await waitForObsidianSync(syncTarget, syncEnv, (status) => status.lastResult?.nodeCount === 1 && !status.due);
+  const updatedSync = await waitForObsidianSync(syncTarget, syncEnv, (status) => status.lastResult?.nodeCount === 2 && !status.due);
   assert(fs.readdirSync(path.join(updatedSync.output, "Component")).some((name) => name.startsWith(syncedNode.publicId)));
   assert.equal(JSON.parse(fs.readFileSync(path.join(syncTarget, ".argos", "obsidian-sync.json"), "utf8")).attemptToken, null);
   await renameWithRetry(syncTarget, relocatedSyncTarget);
   const relocatedStatus = runWithEnv(syncEnv, "status", "--root", relocatedSyncTarget);
   assert.equal(relocatedStatus.obsidianSync.root, path.resolve(relocatedSyncTarget));
   assert.equal(relocatedStatus.obsidianSync.output, path.join(path.resolve(relocatedSyncTarget), ".argos", "obsidian", "Automatic sync target"));
-  const relocatedSync = await waitForObsidianSync(relocatedSyncTarget, syncEnv, (status) => status.lastResult?.nodeCount === 1 && !status.due);
+  const relocatedSync = await waitForObsidianSync(relocatedSyncTarget, syncEnv, (status) => status.lastResult?.nodeCount === 2 && !status.due);
   assert(fs.readdirSync(path.join(relocatedSync.output, "Component")).some((name) => name.startsWith(syncedNode.publicId)));
   assert.equal(relocatedSync.lastResult.output, path.join(path.resolve(relocatedSyncTarget), ".argos", "obsidian", "Automatic sync target"));
   assert.equal(fs.existsSync(syncTarget), false);
@@ -512,8 +539,8 @@ try {
   assert.equal(statusWhileDisabled.obsidianSync.enabled, false);
   const restartedSync = runWithEnv(syncEnv, "obsidian", "sync", "enable", "--root", relocatedSyncTarget, "--interval-seconds", "1");
   assert.equal(restartedSync.enabled, true);
-  assert.equal(restartedSync.lastResult?.nodeCount, 1);
-  assert.equal(runWithEnv(syncEnv, "obsidian", "sync", "refresh", "--root", relocatedSyncTarget).lastResult?.nodeCount, 1);
+  assert.equal(restartedSync.lastResult?.nodeCount, 2);
+  assert.equal(runWithEnv(syncEnv, "obsidian", "sync", "refresh", "--root", relocatedSyncTarget).lastResult?.nodeCount, 2);
   assert.equal(runWithEnv(syncEnv, "obsidian", "sync", "disable", "--root", relocatedSyncTarget).enabled, false);
 
   const customVault = path.join(relocatedSyncTarget, "custom-vault");
@@ -562,6 +589,7 @@ try {
 function create(type, title, content, aliases = []) {
   const args = ["node", "create", "--root", target, "--type", type, "--title", title, "--content", content];
   if (aliases.length) args.push("--aliases", aliases.join(","));
+  if (type !== "target") args.push(...defaultAttachment(target, type));
   const result = run(...args);
   assert.equal(result.created, true, JSON.stringify(result));
   return result.node;
@@ -572,9 +600,22 @@ function link(from, type, to) {
 }
 
 function createAt(root, type, title, content) {
-  const result = run("node", "create", "--root", root, "--type", type, "--title", title, "--content", content);
+  const args = ["node", "create", "--root", root, "--type", type, "--title", title, "--content", content];
+  if (type !== "target") args.push(...defaultAttachment(root, type));
+  const result = run(...args);
   assert.equal(result.created, true, JSON.stringify(result));
   return result.node;
+}
+
+function defaultAttachment(root, type) {
+  const rootNode = run("node", "list", "--root", root, "--type", "target", "--limit", "1")[0];
+  assert(rootNode, `Expected a target root at ${root}`);
+  if (["component", "boundary", "principal", "note"].includes(type)) {
+    return ["--link-to", rootNode.publicId, "--relation", "contains", "--direction", "incoming"];
+  }
+  const component = run("node", "list", "--root", root, "--type", "component", "--limit", "1")[0];
+  assert(component, `Expected a component parent at ${root}`);
+  return ["--link-to", component.publicId, "--relation", "contains", "--direction", "incoming"];
 }
 
 function linkAt(root, from, type, to) {

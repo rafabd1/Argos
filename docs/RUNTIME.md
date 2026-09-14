@@ -33,7 +33,7 @@ argos node resolve --root C:\path\to\target --type sink --title "Archive file wr
 Create or update free-form Markdown:
 
 ```powershell
-argos node create --root C:\path\to\target --type sink --title "Archive file write" --content-file sink.md --aliases "writeEntry"
+argos node create --root C:\path\to\target --type sink --title "Archive file write" --content-file sink.md --aliases "writeEntry" --link-to N000003 --relation writes --direction incoming
 argos node update --root C:\path\to\target --id N000012 --mode append --content "A second producer reaches this sink."
 argos node update --root C:\path\to\target --id N000012 --old-text "Old exact sentence." --new-text "Corrected sentence."
 argos node update --root C:\path\to\target --id N000012 --edits-file edits.json
@@ -47,6 +47,19 @@ Use `--content-file -` to read Markdown from stdin. Exact identity returns
 `canonical` with `created: false`. A strong ambiguous match returns
 `resolutionRequired: true` and exits with code 2. After review, pass the checked
 IDs through `--distinct-from` only when the item is genuinely separate.
+
+The first `target` node is the graph root and needs no relation. Each later new
+node requires `--link-to`, `--relation`, and `--direction`. Creation stores the
+node and its initial edge in one transaction, so a bad relation leaves neither
+record behind. Use `incoming` when the existing node points to the new node and
+`outgoing` when the new node points to the existing node. Attach top-level
+components to the target, then attach lower-level items to the exact component,
+flow, sink, premise, test target, or evidence they concern. `related_to` is not
+accepted as the initial relation. Direct target links are limited to top-level
+components, boundaries, principals, and target-wide notes.
+`status` counts isolated nodes and broad target links left by older runtimes.
+Use `gaps` without `--id` to list the affected nodes and edge IDs. Add the exact
+replacement relation before removing a broad edge.
 
 `node update` requires a title, content, aliases, or exact text edits. An
 identical replacement and an empty append are no-ops and do not refresh
@@ -155,6 +168,8 @@ The vault contains one Markdown note per canonical node, `Argos Index.md`, and
 edge produces one Obsidian graph edge. Incoming relations remain readable in
 the target note without adding a reverse link. The index reports graph health
 and embeds filtered Bases views without linking every note to a central file.
+Free-form note text that contains literal Obsidian wikilink syntax is escaped in
+the projection, so route forms such as `[[...slug]]` do not create ghost nodes.
 
 The state contains no persistent process or fixed workspace root. Internal
 vault paths follow the `root` passed by the current tool after a move or copy.

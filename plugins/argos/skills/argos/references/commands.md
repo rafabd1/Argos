@@ -19,6 +19,7 @@ MCP: `argos_init`, `argos_status`, `argos_vocabulary_add`.
 argos node resolve --type <type> --title <title> [--aliases <a,b>] [--content <markdown> | --content-file <path|->]
 argos node create --type <type> --title <title> [--content <markdown> | --content-file <path|->]
                   [--aliases <a,b>] [--distinct-from <N...,...>]
+                  --link-to <N...> --relation <type> --direction outgoing|incoming
 argos node update --id <N...> [--title <title>] [--content <markdown> | --content-file <path|->]
                   [--aliases <a,b>] [--mode replace|append]
                   [--old-text <exact>] [--new-text <replacement>] [--edits-file <path|->]
@@ -36,6 +37,15 @@ MCP: `argos_resolve_node`, `argos_create_node`, `argos_update_node`, `argos_remo
 request broad pages to reconstruct the whole graph in model context.
 
 Use `--content-file -` to read Markdown from stdin. A create result with `resolutionRequired: true` means the caller must inspect candidates. Exact identity returns `canonical` instead of creating a duplicate.
+The first `target` node is the only relation-free root. Every later insertion
+requires an initial relation to an existing canonical node. The node and edge
+commit together. `outgoing` means new node to existing node; `incoming` means
+existing node to new node. MCP uses `initialRelation: { nodeId, type,
+direction }`. Choose the exact hierarchy or technical relation; `related_to`
+cannot be used as the initial attachment. The target root contains only
+top-level components, boundaries, principals, and target-wide notes. Attach
+detailed knowledge to one of those specific nodes instead of flattening it
+under the target.
 Use `node update` when the same item's current interpretation, version, payload, or proof changes. Use `--old-text` with `--new-text` for one edit and `--new-text=` for deletion. `--edits-file` accepts an ordered JSON array of `{ "oldText": "...", "newText": "..." }` edits. Each old text must match once or the full update fails unchanged.
 Merge only after both notes are confirmed to be one item. Supply the reviewed final body; Argos preserves aliases, rewires relations, redirects the retired ID, and discards former bodies.
 Use `node remove` only for an item that never belonged in target knowledge. It permanently removes the canonical node and connected graph data. Update inaccurate target knowledge instead.

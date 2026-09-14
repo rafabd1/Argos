@@ -22,7 +22,11 @@ Follow the implementation far enough to answer:
 - which checks apply, with what input provenance and path coverage;
 - which operation creates the security-relevant effect.
 
-Add canonical nodes only for items with independent meaning. Link them as soon as the relation is proven.
+Add canonical nodes only for items with independent meaning. Create each node
+with its first proven relation: top-level components belong under the target,
+while lower-level parts and research objects attach to the exact component,
+flow, sink, premise, or evidence they concern. Do not use the target or
+`related_to` as a generic attachment.
 
 ## Trace Through The Real Layer
 

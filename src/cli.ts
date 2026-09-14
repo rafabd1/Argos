@@ -171,7 +171,8 @@ async function handleNode(root: string, subcommand: string | undefined, rest: st
       title: requiredOption(parsed, "title"),
       content: readContent(parsed) ?? "",
       aliases: listOption(parsed, "aliases"),
-      distinctFrom: listOption(parsed, "distinct-from")
+      distinctFrom: listOption(parsed, "distinct-from"),
+      initialRelation: readInitialRelation(parsed)
     }));
     print(result);
     if (result.resolutionRequired) process.exitCode = 2;
@@ -358,7 +359,7 @@ function allowedOptions(command: string, subcommand: string | undefined, rest: s
   if (command === "status") return [];
   if (command === "vocabulary") return subcommand === "add" ? ["kind", "name"] : [];
   if (command === "node") {
-    if (subcommand === "create") return ["type", "title", "content", "content-file", "aliases", "distinct-from"];
+    if (subcommand === "create") return ["type", "title", "content", "content-file", "aliases", "distinct-from", "link-to", "relation", "direction"];
     if (subcommand === "update") return ["id", "title", "content", "content-file", "aliases", "mode", "old-text", "new-text", "edits-file"];
     if (subcommand === "remove") return ["id", "reason"];
     if (subcommand === "merge") return ["source", "into", "title", "content", "content-file", "aliases"];
@@ -424,6 +425,17 @@ function readContent(parsed: ParsedArgs): string | undefined {
   return undefined;
 }
 
+function readInitialRelation(parsed: ParsedArgs): { nodeId: string; type: string; direction: "outgoing" | "incoming" } | undefined {
+  const nodeId = option(parsed, "link-to");
+  const type = option(parsed, "relation");
+  const direction = option(parsed, "direction");
+  const supplied = [nodeId, type, direction].filter((value) => value !== undefined).length;
+  if (supplied === 0) return undefined;
+  if (supplied !== 3) throw new Error("Use --link-to, --relation, and --direction together");
+  if (direction !== "outgoing" && direction !== "incoming") throw new Error("--direction must be outgoing or incoming");
+  return { nodeId: nodeId!, type: type!, direction };
+}
+
 function readEdits(parsed: ParsedArgs): NodeTextEdit[] | undefined {
   const hasFile = parsed.options.has("edits-file");
   const file = option(parsed, "edits-file");
@@ -469,6 +481,7 @@ Usage:
 
   argos node create --type <type> --title <title> [--content <markdown> | --content-file <path|->]
                     [--aliases <a,b>] [--distinct-from <N...>]
+                    --link-to <N...> --relation <type> --direction outgoing|incoming
   argos node update --id <N...> [--title <title>] [--content <markdown> | --content-file <path|->]
                     [--aliases <a,b>] [--mode replace|append]
                     [--old-text <exact>] [--new-text <replacement>] [--edits-file <path|->]
