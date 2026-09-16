@@ -177,8 +177,13 @@ Obsidian nodes. SQLite content remains unchanged.
 `Argos Index.md` summarizes node types, relation types, stale knowledge, and
 isolated notes without linking every note into an artificial hub. It embeds
 `Argos Explorer.base`, which provides filtered Obsidian Bases views for all
-knowledge, findings, hypotheses, tests, stale notes, and isolated notes. The
-export does not write `.obsidian` preferences.
+knowledge, findings, hypotheses, tests, stale notes, and isolated notes.
+
+The exporter adds missing high-contrast color groups for the primary research
+node types to `.obsidian/graph.json`. It preserves existing groups, custom
+colors, filters, layout, and force settings. The graph configuration is not a
+managed projection file and never enters the export manifest. Invalid or
+unexpected graph settings are left unchanged and reported in the export result.
 
 SQLite remains canonical. A manifest tracks generated files and their hashes
 across renames. `--prune` removes only unchanged stale files listed in that

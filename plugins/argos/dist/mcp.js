@@ -273,7 +273,7 @@ const tools = [
     {
         name: "argos_export_obsidian",
         title: "Export Obsidian Vault",
-        description: "Export one Markdown note per canonical node, one graph link per directed relation, a compact index, and an Obsidian Bases explorer. Pruning removes only files recorded in the prior Argos export manifest.",
+        description: "Export one Markdown note per canonical node, one graph link per directed relation, a compact index, an Obsidian Bases explorer, and missing high-contrast groups for primary node types. Existing graph groups and preferences are preserved. Pruning removes only files recorded in the prior Argos export manifest.",
         inputSchema: schema({
             root: rootProperty,
             output: optionalStringProp("Output vault path. Defaults to <root>/.argos/obsidian/<config-name>."),

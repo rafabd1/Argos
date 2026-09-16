@@ -21,12 +21,34 @@ const env = {
 
 try {
   const version = run("--version");
-  assert.equal(version.version, "0.1.6");
+  assert.equal(version.version, "0.1.7");
   const initialized = run("init", "--root", target, "--name", "Smoke Target");
   assert.equal(initialized.initialized, true);
   const namedDefaultExport = run("export", "obsidian", "--root", target);
   assert.equal(namedDefaultExport.output, path.join(target, ".argos", "obsidian", "Smoke Target"));
   assert(fs.existsSync(namedDefaultExport.indexPath));
+  assert.equal(namedDefaultExport.graphColorGroupsAdded, 8);
+  const defaultGraphConfig = JSON.parse(fs.readFileSync(namedDefaultExport.graphConfigPath, "utf8"));
+  assert.deepEqual(defaultGraphConfig.colorGroups.map((group) => group.query), [
+    "[type:component]",
+    "[type:boundary]",
+    "[type:principal]",
+    "[type:sink]",
+    "[type:test]",
+    "[type:hypothesis]",
+    "[type:finding]",
+    "[type:guarantee]"
+  ]);
+  assert.deepEqual(Object.fromEntries(defaultGraphConfig.colorGroups.map((group) => [group.query, group.color.rgb])), {
+    "[type:component]": 0x2869ff,
+    "[type:boundary]": 0xfbef00,
+    "[type:principal]": 0x9e41ff,
+    "[type:sink]": 0xc21800,
+    "[type:test]": 0x61ebff,
+    "[type:hypothesis]": 0xf339ff,
+    "[type:finding]": 0xffffff,
+    "[type:guarantee]": 0x1cae9e
+  });
   const sanitizedNameTarget = path.join(temp, "sanitized-name-target");
   fs.mkdirSync(sanitizedNameTarget, { recursive: true });
   run("init", "--root", sanitizedNameTarget, "--name", "Review / Target: 2026.");
@@ -212,6 +234,33 @@ try {
   assert(fs.existsSync(path.join(vault, "Argos Index.md")));
   assert(fs.existsSync(path.join(vault, "Argos Explorer.base")));
   assert.equal(fs.existsSync(path.join(vault, "Argos Knowledge Graph.canvas")), false);
+  const graphConfigPath = path.join(vault, ".obsidian", "graph.json");
+  const customizedGraphConfig = JSON.parse(fs.readFileSync(graphConfigPath, "utf8"));
+  customizedGraphConfig.showArrow = true;
+  customizedGraphConfig["collapse-color-groups"] = true;
+  customizedGraphConfig.colorGroups.find((group) => group.query === "[type:component]").color.rgb = 0x123456;
+  customizedGraphConfig.colorGroups = customizedGraphConfig.colorGroups
+    .filter((group) => group.query !== "[type:sink]");
+  customizedGraphConfig.colorGroups.push({ query: "path:Manual", color: { a: 1, rgb: 0xabcdef } });
+  fs.writeFileSync(graphConfigPath, `${JSON.stringify(customizedGraphConfig, null, 2)}\n`);
+  const mergedGraphExport = run("export", "obsidian", "--root", target, "--out", vault);
+  assert.equal(mergedGraphExport.graphColorGroupsAdded, 1);
+  assert.equal(mergedGraphExport.graphConfigWarning, null);
+  const mergedGraphConfig = JSON.parse(fs.readFileSync(graphConfigPath, "utf8"));
+  assert.equal(mergedGraphConfig.showArrow, true);
+  assert.equal(mergedGraphConfig["collapse-color-groups"], true);
+  assert.equal(mergedGraphConfig.colorGroups.find((group) => group.query === "[type:component]").color.rgb, 0x123456);
+  assert.equal(mergedGraphConfig.colorGroups.filter((group) => group.query === "[type:sink]").length, 1);
+  assert(mergedGraphConfig.colorGroups.some((group) => group.query === "path:Manual"));
+  assert.equal(JSON.parse(fs.readFileSync(exported.manifestPath, "utf8")).generatedFiles.includes(".obsidian/graph.json"), false);
+
+  const invalidGraphVault = path.join(temp, "invalid-graph-vault");
+  const invalidGraphConfigPath = path.join(invalidGraphVault, ".obsidian", "graph.json");
+  fs.mkdirSync(path.dirname(invalidGraphConfigPath), { recursive: true });
+  fs.writeFileSync(invalidGraphConfigPath, "{user-managed-invalid-json\n");
+  const invalidGraphExport = run("export", "obsidian", "--root", target, "--out", invalidGraphVault);
+  assert.match(invalidGraphExport.graphConfigWarning, /not valid JSON/);
+  assert.equal(fs.readFileSync(invalidGraphConfigPath, "utf8"), "{user-managed-invalid-json\n");
   const indexBody = fs.readFileSync(path.join(vault, "Argos Index.md"), "utf8");
   assert(indexBody.includes("![[Argos Explorer.base]]"));
   assert.equal((indexBody.match(/\[\[/g) ?? []).length, 1);

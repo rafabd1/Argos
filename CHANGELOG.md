@@ -2,6 +2,16 @@
 
 All notable changes to Argos are documented here.
 
+## [0.1.7] - 2026-09-16
+
+### Added
+
+- Obsidian exports add high-contrast Graph View colors for the primary research node types.
+
+### Fixed
+
+- Graph color setup preserves existing groups, custom colors, filters, layout, and malformed user configuration instead of replacing them.
+
 ## [0.1.6] - 2026-09-16
 
 ### Changed
