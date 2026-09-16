@@ -35,7 +35,6 @@ const TECHNICAL_CHAIN_RELATIONS = new Set([
   "consumes",
   "influences",
   "crosses",
-  "runs_as",
   "affects"
 ]);
 
@@ -45,8 +44,15 @@ const CHAIN_EXCLUDED_NODE_TYPES = new Set([
   "finding",
   "intel",
   "artifact",
-  "note"
+  "note",
+  "principal"
 ]);
+
+const UNTYPED_SUGGESTION = "candidate";
+const INSPECTION_DEFAULT_MAX_PAYLOAD_BYTES = 24 * 1024;
+const INSPECTION_MIN_PAYLOAD_BYTES = 8 * 1024;
+const INSPECTION_MAX_PAYLOAD_BYTES = 128 * 1024;
+const SUMMARY_ALIAS_LIMIT = 8;
 
 const TOP_LEVEL_NODE_TYPES = new Set(["component", "boundary", "principal", "note"]);
 
@@ -145,6 +151,9 @@ export interface StatusView {
     pendingSuggestions: number;
     isolatedNodes: number;
     broadRootLinks: number;
+    genericRelations: number;
+    genericOnlyNodes: number;
+    highFanoutGenericHubs: number;
   };
   nodeTypes: Record<string, number>;
   integrityWarnings: Array<{ code: string; message: string }>;
@@ -199,6 +208,31 @@ export class ArgosDb {
            AND destination.type IN ('component', 'boundary', 'principal', 'note')
          )`
     ).get() as Row).count ?? 0);
+    const genericRelations = Number((this.db.prepare(
+      "SELECT COUNT(*) AS count FROM edges WHERE type = 'related_to'"
+    ).get() as Row).count ?? 0);
+    const genericOnlyNodes = Number((this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM nodes n
+      WHERE n.type <> 'target'
+        AND EXISTS (SELECT 1 FROM edges e WHERE e.from_node_id = n.id OR e.to_node_id = n.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM edges e
+          WHERE (e.from_node_id = n.id OR e.to_node_id = n.id)
+            AND e.type <> 'related_to'
+        )
+    `).get() as Row).count ?? 0);
+    const highFanoutGenericHubs = Number((this.db.prepare(`
+      SELECT COUNT(*) AS count FROM (
+        SELECT node_id FROM (
+          SELECT from_node_id AS node_id FROM edges WHERE type = 'related_to'
+          UNION ALL
+          SELECT to_node_id AS node_id FROM edges WHERE type = 'related_to'
+        )
+        GROUP BY node_id
+        HAVING COUNT(*) >= 10
+      )
+    `).get() as Row).count ?? 0);
     const integrityWarnings: Array<{ code: string; message: string }> = [];
     if (isolatedNodes > 0) {
       integrityWarnings.push({
@@ -212,6 +246,18 @@ export class ArgosDb {
         message: `${broadRootLinks} relation(s) attach detailed knowledge directly to the target instead of its specific owner or subject. Run find_gaps without an id to list them, add the exact hierarchy, flow, test, premise, or evidence relation, then remove the broad target link.`
       });
     }
+    if (genericOnlyNodes > 0) {
+      integrityWarnings.push({
+        code: "generic_only_nodes",
+        message: `${genericOnlyNodes} node(s) are connected only through related_to. Replace those links with exact hierarchy, flow, authority, evidence, or premise relations where the knowledge supports them.`
+      });
+    }
+    if (highFanoutGenericHubs > 0) {
+      integrityWarnings.push({
+        code: "high_fanout_generic_hubs",
+        message: `${highFanoutGenericHubs} node(s) have at least 10 related_to links. Review these hubs because generic fan-out can hide the useful structure of the map.`
+      });
+    }
     return {
       initialized: true,
       name: this.config.name,
@@ -222,7 +268,10 @@ export class ArgosDb {
         edges: count("edges"),
         pendingSuggestions: count("link_suggestions", "WHERE status = 'pending'"),
         isolatedNodes,
-        broadRootLinks
+        broadRootLinks,
+        genericRelations,
+        genericOnlyNodes,
+        highFanoutGenericHubs
       },
       nodeTypes: Object.fromEntries(typeRows.map((row) => [String(row.type), Number(row.count)])),
       integrityWarnings
@@ -438,7 +487,7 @@ export class ArgosDb {
     };
   }
 
-  inspect(reference: string | number, options: { depth?: number; mapLimit?: number; relationLimit?: number; maxHops?: number; chainLimit?: number } = {}): KnowledgeInspection {
+  inspect(reference: string | number, options: { depth?: number; mapLimit?: number; relationLimit?: number; maxHops?: number; chainLimit?: number; maxPayloadBytes?: number } = {}): KnowledgeInspection {
     const context = this.getContext(reference, options.relationLimit ?? 200);
     const suggestionCount = Number((this.db.prepare(
       "SELECT COUNT(*) AS count FROM link_suggestions WHERE status = 'pending' AND (from_node_id = ? OR to_node_id = ?)"
@@ -448,7 +497,7 @@ export class ArgosDb {
     ).all(context.node.id, context.node.id) as Row[]).map(rowToSuggestion);
     const directRelations = uniqueEdges([...context.outgoing, ...context.incoming]);
     const technicalChains = this.discoverChains(context.node.publicId, options.maxHops ?? 5, options.chainLimit ?? 10);
-    return {
+    const inspection: KnowledgeInspection = {
       context,
       map: this.map(context.node.publicId, options.depth ?? 2, options.mapLimit ?? 80),
       gaps: this.gaps(context.node.publicId),
@@ -459,8 +508,10 @@ export class ArgosDb {
       chains: technicalChains,
       pendingSuggestions,
       pendingSuggestionCount: suggestionCount,
-      pendingSuggestionsTruncated: suggestionCount > pendingSuggestions.length
+      pendingSuggestionsTruncated: suggestionCount > pendingSuggestions.length,
+      output: emptyInspectionOutput(options.maxPayloadBytes)
     };
+    return fitInspectionToBudget(inspection, options.maxPayloadBytes);
   }
 
   listNodes(options: { type?: string; limit?: number; offset?: number } = {}): NodeSummary[] {
@@ -539,10 +590,14 @@ export class ArgosDb {
           droppedSelfRelations += 1;
           continue;
         }
-        if (relationType === "related_to" && fromId > toId) [fromId, toId] = [toId, fromId];
-        const existing = this.db.prepare(
-          "SELECT * FROM link_suggestions WHERE from_node_id = ? AND relation_type = ? AND to_node_id = ?"
-        ).get(fromId, relationType, toId) as Row | undefined;
+        const existing = relationType === "related_to" || relationType === UNTYPED_SUGGESTION
+          ? this.db.prepare(`
+              SELECT * FROM link_suggestions
+              WHERE relation_type = ? AND ((from_node_id = ? AND to_node_id = ?) OR (from_node_id = ? AND to_node_id = ?))
+            `).get(relationType, fromId, toId, toId, fromId) as Row | undefined
+          : this.db.prepare(
+              "SELECT * FROM link_suggestions WHERE from_node_id = ? AND relation_type = ? AND to_node_id = ?"
+            ).get(fromId, relationType, toId) as Row | undefined;
         if (existing) {
           const combinedStatus = mergeSuggestionStatus(String(existing.status) as SuggestionStatus, String(row.status) as SuggestionStatus);
           const combinedReasons = [...new Set([...parseStringArray(existing.reasons_json), ...parseStringArray(row.reasons_json)])];
@@ -667,33 +722,65 @@ export class ArgosDb {
     const type = options.type ? assertNodeType(this.config, options.type) : undefined;
     const limit = boundedInteger(options.limit, 20, 1, 100);
     const depth = boundedInteger(options.depth, 1, 0, 3);
+    const nodes = this.allNodes().filter((node) => !type || node.type === type);
     const ftsIds = this.ftsMatches(query, Math.max(50, limit * 4));
     const queryTerms = meaningfulTerms(query);
     const queryIdentifiers = extractIdentifiers(query);
+    const termFrequency = documentFrequency(nodes, (node) => meaningfulTerms(`${node.title} ${node.aliases.join(" ")} ${node.content}`));
+    const identifierFrequency = documentFrequency(nodes, (node) => extractIdentifiers(`${node.title} ${node.aliases.join(" ")} ${node.content}`));
+    const normalizedQuery = normalizeIdentity(query);
     const seeds: SearchHit[] = [];
-    for (const node of this.allNodes()) {
-      if (type && node.type !== type) continue;
+    for (const node of nodes) {
       const reasons: string[] = [];
+      const normalizedTitle = normalizeIdentity(node.title);
+      const normalizedAliases = node.aliases.map(normalizeIdentity);
+      const exactTitle = normalizedQuery === normalizedTitle;
+      const exactAlias = normalizedAliases.includes(normalizedQuery);
       const titleIdentity = identitySimilarity(query, node.title);
+      const aliasIdentity = Math.max(0, ...node.aliases.map((alias) => identitySimilarity(query, alias)));
+      const titleTerms = meaningfulTerms(node.title);
+      const aliasTerms = meaningfulTerms(node.aliases.join(" "));
       const bodyTerms = meaningfulTerms(`${node.title} ${node.aliases.join(" ")} ${node.content}`);
-      const termScore = jaccard(queryTerms, bodyTerms);
-      const sharedIdentifiers = intersection(queryIdentifiers, extractIdentifiers(`${node.title} ${node.aliases.join(" ")} ${node.content}`));
-      const ftsRank = ftsIds.get(node.id);
-      let score = Math.max(titleIdentity * 0.95, termScore * 0.75);
-      if (ftsRank !== undefined) {
-        score = Math.max(score, 0.64 + Math.max(0, 0.16 - ftsRank * 0.01));
+      const titleCoverage = weightedQueryCoverage(queryTerms, titleTerms, termFrequency, nodes.length);
+      const aliasCoverage = weightedQueryCoverage(queryTerms, aliasTerms, termFrequency, nodes.length);
+      const bodyCoverage = weightedQueryCoverage(queryTerms, bodyTerms, termFrequency, nodes.length);
+      const nodeIdentifiers = extractIdentifiers(`${node.title} ${node.aliases.join(" ")} ${node.content}`);
+      const sharedIdentifiers = intersection(queryIdentifiers, nodeIdentifiers);
+      const rareIdentifiers = sharedIdentifiers.filter((identifier) => !isNoisyIdentifier(identifier)
+        && (identifierFrequency.get(identifier) ?? 0) <= Math.max(2, Math.ceil(nodes.length * 0.08)));
+      const ftsPosition = ftsIds.get(node.id);
+      let score = Math.max(
+        exactTitle ? 1 : 0,
+        exactAlias ? 0.995 : 0,
+        titleIdentity * 0.94,
+        aliasIdentity * 0.92,
+        titleCoverage * 0.93,
+        aliasCoverage * 0.91,
+        bodyCoverage * 0.7
+      );
+      if (exactTitle) reasons.push("exact title");
+      else if (exactAlias) reasons.push("exact alias");
+      else if (titleIdentity >= 0.6 || aliasIdentity >= 0.6) reasons.push("title or alias proximity");
+      if (titleCoverage >= 0.5) reasons.push("query terms in title");
+      else if (aliasCoverage >= 0.5) reasons.push("query terms in aliases");
+      if (sharedIdentifiers.length > 0) {
+        const identifierScore = rareIdentifiers.length > 0
+          ? Math.min(0.99, 0.84 + rareIdentifiers.length * 0.045)
+          : Math.min(0.76, 0.62 + sharedIdentifiers.length * 0.03);
+        score = Math.max(score, identifierScore);
+        reasons.push(`shared identifier: ${(rareIdentifiers.length > 0 ? rareIdentifiers : sharedIdentifiers).slice(0, 3).join(", ")}`);
+      }
+      if (ftsPosition !== undefined && score > 0) {
+        score = Math.min(1, score + Math.max(0.005, 0.035 - ftsPosition * 0.001));
         reasons.push("full-text match");
       }
-      if (titleIdentity >= 0.6) reasons.push("title or alias proximity");
-      if (sharedIdentifiers.length > 0) {
-        score = Math.max(score, Math.min(0.96, 0.78 + sharedIdentifiers.length * 0.05));
-        reasons.push(`shared identifier: ${sharedIdentifiers.slice(0, 3).join(", ")}`);
-      }
-      if (score >= 0.12) {
+      if (score >= 0.1) {
         seeds.push({ node: summarizeNode(node), score: roundScore(score), matchReasons: [...new Set(reasons.length ? reasons : ["content overlap"])], distance: 0 });
       }
     }
-    seeds.sort((a, b) => b.score - a.score || b.node.updatedAt.localeCompare(a.node.updatedAt));
+    seeds.sort((a, b) => searchIdentityPriority(b) - searchIdentityPriority(a)
+      || b.score - a.score
+      || b.node.updatedAt.localeCompare(a.node.updatedAt));
     if (depth === 0) return seeds.slice(0, limit);
 
     const result = new Map<string, SearchHit>();
@@ -727,7 +814,9 @@ export class ArgosDb {
         if (!previous || distance < previous.distance) queue.push({ id: neighborId, distance, seedScore: current.seedScore });
       }
     }
-    return [...result.values()].sort((a, b) => b.score - a.score || a.distance - b.distance).slice(0, limit);
+    return [...result.values()].sort((a, b) => searchIdentityPriority(b) - searchIdentityPriority(a)
+      || b.score - a.score
+      || a.distance - b.distance).slice(0, limit);
   }
 
   addEdge(fromReference: string | number, typeInput: string, toReference: string | number): KnowledgeEdge {
@@ -806,7 +895,7 @@ export class ArgosDb {
         return leftDistance - rightDistance || left.id - right.id;
       });
     return {
-      root,
+      root: summarizeNode(root),
       nodes: [...included].map((id) => summarizeNode(allNodes.get(id)!)).sort((a, b) => (distance.get(a.publicId)! - distance.get(b.publicId)!) || a.publicId.localeCompare(b.publicId)),
       edges: internalEdges.slice(0, edgeLimit),
       depth,
@@ -820,6 +909,7 @@ export class ArgosDb {
 
   discoverChains(reference: string | number, maxHopsInput = 5, limitInput = 20): ChainPath[] {
     const start = this.getNode(reference);
+    if (start.type === "principal") return [];
     const maxHops = boundedInteger(maxHopsInput, 5, 1, 7);
     const limit = boundedInteger(limitInput, 20, 1, 100);
     const edges = this.getAllEdgeViews();
@@ -870,6 +960,7 @@ export class ArgosDb {
     const source = this.getNode(reference);
     const limit = boundedInteger(limitInput, 10, 1, 50);
     const edges = this.getAllEdgeViews();
+    const nodes = this.allNodes();
     const connected = new Set<string>();
     for (const edge of edges) {
       if (edge.fromId === source.publicId) connected.add(edge.toId);
@@ -878,33 +969,47 @@ export class ArgosDb {
     const sourceTerms = meaningfulTerms(`${source.title} ${source.aliases.join(" ")} ${source.content}`);
     const sourceIdentifiers = extractIdentifiers(`${source.title} ${source.aliases.join(" ")} ${source.content}`);
     const sourceNeighbors = neighborIds(source.publicId, edges);
+    const termFrequency = documentFrequency(nodes, (node) => meaningfulTerms(`${node.title} ${node.aliases.join(" ")} ${node.content}`));
+    const identifierFrequency = documentFrequency(nodes, (node) => extractIdentifiers(`${node.title} ${node.aliases.join(" ")} ${node.content}`));
+    const targetVocabulary = new Set(nodes
+      .filter((node) => node.type === "target")
+      .flatMap((node) => [
+        ...meaningfulTerms(`${node.title} ${node.aliases.join(" ")}`),
+        ...extractIdentifiers(`${node.title} ${node.aliases.join(" ")}`)
+      ]));
+    const degree = graphDegree(edges);
     const candidates: Array<{ node: KnowledgeNode; score: number; reasons: string[] }> = [];
-    for (const node of this.allNodes()) {
+    for (const node of nodes) {
       if (node.id === source.id || connected.has(node.publicId)) continue;
       const reasons: string[] = [];
-      const sharedIdentifiers = intersection(sourceIdentifiers, extractIdentifiers(`${node.title} ${node.aliases.join(" ")} ${node.content}`));
-      const termOverlap = jaccard(sourceTerms, meaningfulTerms(`${node.title} ${node.aliases.join(" ")} ${node.content}`));
-      const commonNeighbors = intersection(sourceNeighbors, neighborIds(node.publicId, edges));
-      let score = termOverlap * 0.5;
+      const sharedIdentifiers = intersection(sourceIdentifiers, extractIdentifiers(`${node.title} ${node.aliases.join(" ")} ${node.content}`))
+        .filter((identifier) => !targetVocabulary.has(identifier)
+          && !isNoisyIdentifier(identifier)
+          && (identifierFrequency.get(identifier) ?? 0) <= Math.max(2, Math.ceil(nodes.length * 0.08)));
+      const nodeTerms = meaningfulTerms(`${node.title} ${node.aliases.join(" ")} ${node.content}`);
+      const termOverlap = weightedSetOverlap(sourceTerms, nodeTerms, termFrequency, nodes.length, 0.15, targetVocabulary);
+      const commonNeighbors = intersection(sourceNeighbors, neighborIds(node.publicId, edges))
+        .filter((id) => (degree.get(id) ?? 0) <= 16);
+      let score = termOverlap * 0.55;
       if (sharedIdentifiers.length > 0) {
         score += Math.min(0.55, 0.28 + sharedIdentifiers.length * 0.09);
         reasons.push(`shared identifier: ${sharedIdentifiers.slice(0, 4).join(", ")}`);
       }
       if (termOverlap >= 0.12) reasons.push("overlapping concepts in note content");
       if (commonNeighbors.length > 0) {
-        score += Math.min(0.35, commonNeighbors.length * 0.14);
+        score += Math.min(0.25, commonNeighbors.reduce((total, id) => total + (0.12 / Math.max(1, Math.log2((degree.get(id) ?? 1) + 1))), 0));
         reasons.push(`shared graph neighbor: ${commonNeighbors.slice(0, 3).join(", ")}`);
       }
       if (source.type === "sink" && node.type === "sink" && (sharedIdentifiers.length > 0 || commonNeighbors.length > 0)) {
         score += 0.08;
         reasons.push("two sinks may act as gadgets in one path");
       }
-      if (score >= 0.2) candidates.push({ node, score: Math.min(1, score), reasons });
+      if (score >= 0.28) candidates.push({ node, score: Math.min(1, score), reasons });
     }
     candidates.sort((a, b) => b.score - a.score || a.node.publicId.localeCompare(b.node.publicId));
     const output: Array<LinkSuggestion & { from: NodeSummary; to: NodeSummary }> = [];
     for (const candidate of candidates.slice(0, limit)) {
-      const suggestion = this.upsertSuggestion(source.id, candidate.node.id, "related_to", candidate.score, candidate.reasons);
+      const suggestion = this.upsertSuggestion(source.id, candidate.node.id, UNTYPED_SUGGESTION, candidate.score, candidate.reasons);
       output.push({
         ...suggestion,
         from: summarizeNode(this.getNode(suggestion.fromId)),
@@ -916,8 +1021,13 @@ export class ArgosDb {
 
   reviewSuggestion(reference: string | number, action: "accept" | "reject", relationType?: string): LinkSuggestion & { edge?: KnowledgeEdge } {
     const id = parsePrefixedId(reference, "L");
+    const currentSuggestion = this.getSuggestion(id);
+    if (action === "accept" && !relationType && (currentSuggestion.relationType === null || currentSuggestion.relationType === "related_to")) {
+      throw new Error(`Suggestion ${currentSuggestion.publicId} is an untyped candidate; accepting it requires an explicit relation type`);
+    }
+    const selectedRelation = relationType ?? currentSuggestion.relationType;
     const acceptedRelation = action === "accept"
-      ? assertRelationType(this.config, relationType ?? this.getSuggestion(id).relationType)
+      ? assertRelationType(this.config, selectedRelation ?? "")
       : undefined;
     return this.transaction(() => {
       const suggestion = this.getSuggestion(id);
@@ -982,6 +1092,23 @@ export class ArgosDb {
           node,
           `${edge.publicId} attaches this detailed node directly to the target. Add its exact parent or subject relation before removing the broad edge.`,
           [targetId]
+        ));
+      }
+      const genericEdges = relatedEdges.filter((edge) => edge.type === "related_to");
+      if (relatedEdges.length > 0 && genericEdges.length === relatedEdges.length) {
+        gaps.push(gap(
+          "generic_only_node",
+          node,
+          "This node is connected only through related_to. Replace generic links with the exact supported hierarchy, flow, authority, premise, test, or evidence relation.",
+          directRelatedNodeIds(node.publicId, genericEdges)
+        ));
+      }
+      if (genericEdges.length >= 10) {
+        gaps.push(gap(
+          "generic_relation_hub",
+          node,
+          `This node has ${genericEdges.length} related_to links. Review the hub for exact relations or remove similarity-only links that do not add target knowledge.`,
+          directRelatedNodeIds(node.publicId, genericEdges)
         ));
       }
     }
@@ -1329,10 +1456,15 @@ export class ArgosDb {
       `);
       this.db.exec("DROP TABLE IF EXISTS node_revisions");
       this.db.prepare(`
-        INSERT INTO metadata(key, value) VALUES ('schema_version', '3')
+        INSERT INTO metadata(key, value) VALUES ('schema_version', '4')
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
         WHERE metadata.value <> excluded.value
       `).run();
+      this.db.prepare(`
+        UPDATE link_suggestions
+        SET relation_type = ?
+        WHERE status = 'pending' AND relation_type = 'related_to'
+      `).run(UNTYPED_SUGGESTION);
     });
   }
 
@@ -1383,8 +1515,8 @@ export class ArgosDb {
     if (tokens.length === 0) return new Map();
     const expression = tokens.map((token) => `"${token.replace(/"/g, '""')}"`).join(" OR ");
     try {
-      const rows = this.db.prepare("SELECT CAST(node_id AS INTEGER) AS node_id, bm25(node_fts) AS rank FROM node_fts WHERE node_fts MATCH ? ORDER BY rank LIMIT ?").all(expression, limit) as Row[];
-      return new Map(rows.map((row) => [Number(row.node_id), Math.abs(Number(row.rank ?? 0))]));
+      const rows = this.db.prepare("SELECT CAST(node_id AS INTEGER) AS node_id, bm25(node_fts, 10.0, 6.0, 1.0) AS rank FROM node_fts WHERE node_fts MATCH ? ORDER BY rank LIMIT ?").all(expression, limit) as Row[];
+      return new Map(rows.map((row, index) => [Number(row.node_id), index]));
     } catch {
       return new Map();
     }
@@ -1392,7 +1524,7 @@ export class ArgosDb {
 
   private upsertSuggestion(fromId: number, toId: number, relationType: string, score: number, reasons: string[]): LinkSuggestion {
     return this.transaction(() => {
-      const existing = relationType === "related_to"
+      const existing = relationType === "related_to" || relationType === UNTYPED_SUGGESTION
         ? this.db.prepare(`
             SELECT * FROM link_suggestions
             WHERE relation_type = ? AND ((from_node_id = ? AND to_node_id = ?) OR (from_node_id = ? AND to_node_id = ?))
@@ -1523,7 +1655,7 @@ function rowToSuggestion(row: Row): LinkSuggestion {
     id,
     publicId: suggestionPublicId(id),
     fromId: nodePublicId(Number(row.from_node_id)),
-    relationType: String(row.relation_type),
+    relationType: String(row.relation_type) === UNTYPED_SUGGESTION ? null : String(row.relation_type),
     toId: nodePublicId(Number(row.to_node_id)),
     score: Number(row.score),
     reasons: parseStringArray(row.reasons_json),
@@ -1535,16 +1667,19 @@ function rowToSuggestion(row: Row): LinkSuggestion {
 
 function summarizeNode(node: KnowledgeNode): NodeSummary {
   const plain = node.content.replace(/```[\s\S]*?```/g, " ").replace(/[#*_>`\[\]()]/g, " ").replace(/\s+/g, " ").trim();
+  const aliases = node.aliases.slice(0, SUMMARY_ALIAS_LIMIT);
   return {
     id: node.id,
     publicId: node.publicId,
     type: node.type,
     title: node.title,
-    aliases: node.aliases,
+    aliases,
+    aliasCount: node.aliases.length,
+    aliasesTruncated: node.aliases.length > aliases.length,
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
     ageDays: node.ageDays,
-    excerpt: plain.length > 240 ? `${plain.slice(0, 237)}...` : plain
+    excerpt: plain.length > 180 ? `${plain.slice(0, 177)}...` : plain
   };
 }
 
@@ -1645,6 +1780,9 @@ function extractIdentifiers(value: string): Set<string> {
   for (const match of value.matchAll(/(?:[A-Za-z]:\\)?[A-Za-z0-9_@.-]+(?:[\\/][A-Za-z0-9_@.-]+)+|[A-Za-z_][A-Za-z0-9_]*(?:::|\.|#)[A-Za-z0-9_.:#]+/g)) {
     result.add(normalizeIdentity(match[0]));
   }
+  for (const match of value.matchAll(/\b(?:[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+|[a-z][A-Za-z0-9]*[A-Z][A-Za-z0-9]*)\b/g)) {
+    result.add(normalizeIdentity(match[0]));
+  }
   return result;
 }
 
@@ -1696,21 +1834,262 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
   return Math.max(min, Math.min(max, Math.trunc(number)));
 }
 
+function emptyInspectionOutput(maxPayloadBytesInput?: number): KnowledgeInspection["output"] {
+  return {
+    maxPayloadBytes: boundedInteger(
+      maxPayloadBytesInput,
+      INSPECTION_DEFAULT_MAX_PAYLOAD_BYTES,
+      INSPECTION_MIN_PAYLOAD_BYTES,
+      INSPECTION_MAX_PAYLOAD_BYTES
+    ),
+    serializedBytes: 0,
+    truncatedByBudget: false,
+    nodeContentTruncated: false,
+    omitted: {
+      nodeContentChars: 0,
+      nodeAliases: 0,
+      outgoingRelations: 0,
+      incomingRelations: 0,
+      classifiedRelations: 0,
+      supersededBy: 0,
+      mapNodes: 0,
+      mapEdges: 0,
+      mapFrontierNodeIds: 0,
+      gaps: 0,
+      technicalChains: 0,
+      pendingSuggestions: 0
+    }
+  };
+}
+
+function fitInspectionToBudget(inspection: KnowledgeInspection, maxPayloadBytesInput?: number): KnowledgeInspection {
+  const maxPayloadBytes = boundedInteger(
+    maxPayloadBytesInput,
+    INSPECTION_DEFAULT_MAX_PAYLOAD_BYTES,
+    INSPECTION_MIN_PAYLOAD_BYTES,
+    INSPECTION_MAX_PAYLOAD_BYTES
+  );
+  const original = {
+    nodeAliases: inspection.context.node.aliases.length,
+    outgoingRelations: inspection.context.outgoing.length,
+    incomingRelations: inspection.context.incoming.length,
+    classifiedRelations: inspection.technicalRelations.length + inspection.contextRelations.length,
+    supersededBy: inspection.context.supersededBy.length,
+    mapNodes: inspection.map.nodes.length,
+    mapEdges: inspection.map.edges.length,
+    mapFrontierNodeIds: inspection.map.frontierNodeIds.length,
+    gaps: inspection.gaps.length,
+    technicalChains: inspection.technicalChains.length,
+    pendingSuggestions: inspection.pendingSuggestions.length,
+    nodeContent: inspection.context.node.content,
+    mapOmittedNeighborCount: inspection.map.omittedNeighborCount,
+    mapOmittedEdgeCount: inspection.map.omittedEdgeCount
+  };
+
+  inspection.output = emptyInspectionOutput(maxPayloadBytes);
+  inspection.context.node.aliases = inspection.context.node.aliases.slice(0, 12);
+  inspection.context.outgoing = inspection.context.outgoing.slice(0, 48);
+  inspection.context.incoming = inspection.context.incoming.slice(0, 48);
+  inspection.technicalRelations = inspection.technicalRelations.slice(0, 32);
+  inspection.contextRelations = inspection.contextRelations.slice(0, 32);
+  inspection.context.supersededBy = inspection.context.supersededBy.slice(0, 12);
+  inspection.map.nodes = inspection.map.nodes.slice(0, 48);
+  inspection.map.edges = inspection.map.edges.slice(0, 128);
+  inspection.map.frontierNodeIds = inspection.map.frontierNodeIds.slice(0, 24);
+  inspection.gaps = inspection.gaps.slice(0, 36);
+  inspection.technicalChains = inspection.technicalChains.slice(0, 8);
+  inspection.chains = inspection.technicalChains;
+  inspection.pendingSuggestions = inspection.pendingSuggestions.slice(0, 16);
+
+  const initialContentLimit = Math.max(2_048, Math.min(12_000, Math.floor(maxPayloadBytes * 0.45)));
+  if (inspection.context.node.content.length > initialContentLimit) {
+    inspection.context.node.content = truncatedContent(inspection.context.node.content, initialContentLimit);
+    inspection.output.nodeContentTruncated = true;
+  }
+
+  const refreshMetadata = (): number => {
+    inspection.output.maxPayloadBytes = maxPayloadBytes;
+    inspection.output.omitted = {
+      nodeContentChars: Math.max(0, original.nodeContent.length - inspection.context.node.content.length),
+      nodeAliases: Math.max(0, original.nodeAliases - inspection.context.node.aliases.length),
+      outgoingRelations: Math.max(0, original.outgoingRelations - inspection.context.outgoing.length),
+      incomingRelations: Math.max(0, original.incomingRelations - inspection.context.incoming.length),
+      classifiedRelations: Math.max(0, original.classifiedRelations - inspection.technicalRelations.length - inspection.contextRelations.length),
+      supersededBy: Math.max(0, original.supersededBy - inspection.context.supersededBy.length),
+      mapNodes: Math.max(0, original.mapNodes - inspection.map.nodes.length),
+      mapEdges: Math.max(0, original.mapEdges - inspection.map.edges.length),
+      mapFrontierNodeIds: Math.max(0, original.mapFrontierNodeIds - inspection.map.frontierNodeIds.length),
+      gaps: Math.max(0, original.gaps - inspection.gaps.length),
+      technicalChains: Math.max(0, original.technicalChains - inspection.technicalChains.length),
+      pendingSuggestions: Math.max(0, original.pendingSuggestions - inspection.pendingSuggestions.length)
+    };
+    inspection.context.relationsTruncated = inspection.context.relationsTruncated
+      || inspection.output.omitted.outgoingRelations > 0
+      || inspection.output.omitted.incomingRelations > 0;
+    inspection.map.truncated = inspection.map.truncated
+      || inspection.output.omitted.mapNodes > 0
+      || inspection.output.omitted.mapEdges > 0
+      || inspection.output.omitted.mapFrontierNodeIds > 0;
+    inspection.map.omittedNeighborCount = original.mapOmittedNeighborCount + inspection.output.omitted.mapNodes;
+    inspection.map.omittedEdgeCount = original.mapOmittedEdgeCount + inspection.output.omitted.mapEdges;
+    inspection.pendingSuggestionsTruncated = inspection.pendingSuggestionsTruncated
+      || inspection.output.omitted.pendingSuggestions > 0;
+    inspection.chains = inspection.technicalChains;
+    inspection.output.truncatedByBudget = inspection.output.nodeContentTruncated
+      || Object.values(inspection.output.omitted).some((count) => count > 0);
+    inspection.output.serializedBytes = 0;
+    inspection.output.serializedBytes = Buffer.byteLength(JSON.stringify(inspection), "utf8");
+    const bytes = Buffer.byteLength(JSON.stringify(inspection), "utf8");
+    inspection.output.serializedBytes = bytes;
+    return Buffer.byteLength(JSON.stringify(inspection), "utf8");
+  };
+
+  let bytes = refreshMetadata();
+  const reducers: Array<() => boolean> = [
+    () => trimArray(inspection.map.edges, 16),
+    () => trimArray(inspection.map.nodes, 8),
+    () => trimArray(inspection.technicalRelations, 8) || trimArray(inspection.contextRelations, 8),
+    () => trimArray(inspection.context.outgoing, 8) || trimArray(inspection.context.incoming, 8),
+    () => trimArray(inspection.context.supersededBy, 4),
+    () => trimArray(inspection.pendingSuggestions, 4),
+    () => trimArray(inspection.technicalChains, 2),
+    () => trimArray(inspection.gaps, 4),
+    () => trimArray(inspection.map.frontierNodeIds, 4),
+    () => trimArray(inspection.context.node.aliases, 2)
+  ];
+
+  let guard = 0;
+  while (bytes > maxPayloadBytes && guard < 200) {
+    guard += 1;
+    let changed = false;
+    for (const reduce of reducers) {
+      if (reduce()) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) {
+      const content = inspection.context.node.content;
+      if (content.length === 0) break;
+      inspection.context.node.content = content.length <= 512 ? "" : truncatedContent(original.nodeContent, Math.max(512, Math.floor(content.length * 0.7)));
+      inspection.output.nodeContentTruncated = true;
+    }
+    bytes = refreshMetadata();
+  }
+  refreshMetadata();
+  return inspection;
+}
+
+function trimArray<T>(items: T[], amount: number): boolean {
+  if (items.length === 0) return false;
+  items.splice(Math.max(0, items.length - Math.min(amount, items.length)), Math.min(amount, items.length));
+  return true;
+}
+
+function truncatedContent(content: string, maxChars: number): string {
+  if (content.length <= maxChars) return content;
+  const marker = "\n\n[Content truncated in inspect output; use argos_get_node for the complete canonical note.]";
+  if (maxChars <= marker.length) return marker.slice(0, maxChars);
+  return `${content.slice(0, maxChars - marker.length)}${marker}`;
+}
+
+function documentFrequency(
+  nodes: KnowledgeNode[],
+  selector: (node: KnowledgeNode) => Set<string>
+): Map<string, number> {
+  const frequency = new Map<string, number>();
+  for (const node of nodes) {
+    for (const term of selector(node)) frequency.set(term, (frequency.get(term) ?? 0) + 1);
+  }
+  return frequency;
+}
+
+function termWeight(term: string, frequency: Map<string, number>, documentCount: number): number {
+  return Math.log((documentCount + 1) / ((frequency.get(term) ?? 0) + 1)) + 1;
+}
+
+function weightedQueryCoverage(
+  queryTerms: Set<string>,
+  documentTerms: Set<string>,
+  frequency: Map<string, number>,
+  documentCount: number
+): number {
+  if (queryTerms.size === 0 || documentTerms.size === 0) return 0;
+  let total = 0;
+  let matched = 0;
+  for (const term of queryTerms) {
+    const weight = termWeight(term, frequency, documentCount);
+    total += weight;
+    if (documentTerms.has(term)) matched += weight;
+  }
+  return total === 0 ? 0 : matched / total;
+}
+
+function weightedSetOverlap(
+  left: Set<string>,
+  right: Set<string>,
+  frequency: Map<string, number>,
+  documentCount: number,
+  maxDocumentRatio: number,
+  excluded: Set<string> = new Set()
+): number {
+  if (left.size === 0 || right.size === 0) return 0;
+  const useful = (term: string) => !excluded.has(term)
+    && !isNoisyIdentifier(term)
+    && (frequency.get(term) ?? 0) / Math.max(1, documentCount) <= maxDocumentRatio;
+  const eligibleLeft = [...left].filter(useful);
+  const eligibleRight = [...right].filter(useful);
+  if (eligibleLeft.length === 0 || eligibleRight.length === 0) return 0;
+  const rightSet = new Set(eligibleRight);
+  const leftWeight = eligibleLeft.reduce((total, term) => total + termWeight(term, frequency, documentCount), 0);
+  const rightWeight = eligibleRight.reduce((total, term) => total + termWeight(term, frequency, documentCount), 0);
+  const sharedWeight = eligibleLeft
+    .filter((term) => rightSet.has(term))
+    .reduce((total, term) => total + termWeight(term, frequency, documentCount), 0);
+  return sharedWeight / Math.max(1, Math.min(leftWeight, rightWeight));
+}
+
+function isNoisyIdentifier(identifier: string): boolean {
+  return /^(?:v?\d+(?:\.\d+){1,4}|[a-f0-9]{7,64})$/i.test(identifier);
+}
+
+function graphDegree(edges: EdgeView[]): Map<string, number> {
+  const degree = new Map<string, number>();
+  for (const edge of edges) {
+    degree.set(edge.fromId, (degree.get(edge.fromId) ?? 0) + 1);
+    degree.set(edge.toId, (degree.get(edge.toId) ?? 0) + 1);
+  }
+  return degree;
+}
+
+function searchIdentityPriority(hit: SearchHit): number {
+  if (hit.matchReasons.includes("exact title")) return 2;
+  if (hit.matchReasons.includes("exact alias")) return 1;
+  return 0;
+}
+
+function directRelatedNodeIds(nodeId: string, edges: EdgeView[]): string[] {
+  return [...new Set(edges.map((edge) => edge.fromId === nodeId ? edge.toId : edge.fromId))];
+}
+
 const HYPOTHESIS_CONTEXT_RELATIONS = new Set([
   ...TECHNICAL_CHAIN_RELATIONS,
   "depends_on",
-  "guards"
+  "guards",
+  "runs_as"
 ]);
 
 const SINK_CONTEXT_RELATIONS = new Set([
   ...TECHNICAL_CHAIN_RELATIONS,
-  "guards"
+  "guards",
+  "runs_as"
 ]);
 
 const REFUTATION_RECHECK_RELATIONS = new Set([
   ...TECHNICAL_CHAIN_RELATIONS,
   "depends_on",
   "guards",
+  "runs_as",
   "supersedes"
 ]);
 
@@ -1804,7 +2183,16 @@ function hasTestTarget(targetId: string, edges: EdgeView[], nodes: Map<string, K
 }
 
 function gap(code: string, node: KnowledgeNode, message: string, relatedNodeIds: string[]): KnowledgeGap {
-  return { code, nodeId: node.publicId, message, relatedNodeIds: [...new Set(relatedNodeIds)] };
+  const uniqueRelatedNodeIds = [...new Set(relatedNodeIds)];
+  const boundedRelatedNodeIds = uniqueRelatedNodeIds.slice(0, 40);
+  return {
+    code,
+    nodeId: node.publicId,
+    message,
+    relatedNodeIds: boundedRelatedNodeIds,
+    relatedNodeCount: uniqueRelatedNodeIds.length,
+    relatedNodeIdsTruncated: uniqueRelatedNodeIds.length > boundedRelatedNodeIds.length
+  };
 }
 
 function uniqueGaps(gaps: KnowledgeGap[]): KnowledgeGap[] {

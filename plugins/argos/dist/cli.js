@@ -89,7 +89,8 @@ async function main() {
             mapLimit: numberOption(parsed, "map-limit"),
             relationLimit: numberOption(parsed, "relation-limit"),
             maxHops: numberOption(parsed, "max-hops"),
-            chainLimit: numberOption(parsed, "chain-limit")
+            chainLimit: numberOption(parsed, "chain-limit"),
+            maxPayloadBytes: numberOption(parsed, "max-payload-bytes")
         })));
         return;
     }
@@ -379,7 +380,7 @@ function allowedOptions(command, subcommand, rest) {
     if (command === "search")
         return ["query", "type", "limit", "depth"];
     if (command === "inspect")
-        return ["id", "depth", "map-limit", "relation-limit", "max-hops", "chain-limit"];
+        return ["id", "depth", "map-limit", "relation-limit", "max-hops", "chain-limit", "max-payload-bytes"];
     if (command === "map")
         return ["id", "depth", "limit"];
     if (command === "chains")
@@ -521,10 +522,11 @@ Usage:
   argos link remove --id <E...>
   argos link suggest --id <N...> [--limit <n>]
   argos link list [--status pending|accepted|rejected]
-  argos link accept|reject --id <L...> [--type <relation>]
+  argos link accept --id <L...> --type <relation>
+  argos link reject --id <L...>
 
   argos search <query> [--type <type>] [--depth <0-3>] [--limit <n>]
-  argos inspect <N...> [--depth <0-5>] [--map-limit <n>] [--relation-limit <n>] [--max-hops <1-7>] [--chain-limit <n>]
+  argos inspect <N...> [--depth <0-5>] [--map-limit <n>] [--relation-limit <n>] [--max-hops <1-7>] [--chain-limit <n>] [--max-payload-bytes <8192-131072>]
   argos map <N...> [--depth <0-5>] [--limit <n>]
   argos chains --from <N...> [--max-hops <1-7>] [--limit <n>]
   argos gaps [--id <N...>] [--age-days <n>]

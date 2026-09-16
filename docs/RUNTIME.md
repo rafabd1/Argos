@@ -113,8 +113,8 @@ argos link accept --root C:\path\to\target --id L000004 --type influences
 argos link reject --root C:\path\to\target --id L000005
 ```
 
-Suggestions never alter the graph until accepted. Acceptance may replace the
-suggested `related_to` with a more exact relation. A rejected suggestion can
+Suggestions never alter the graph until accepted. Each result starts as an
+untyped candidate, and acceptance requires the exact supported relation. A rejected suggestion can
 return to pending when either endpoint changes and a later discovery pass
 proposes the relation again.
 
@@ -125,17 +125,21 @@ MCP: `argos_add_link`, `argos_remove_link`, `argos_suggest_links`,
 
 ```powershell
 argos search --root C:\path\to\target --query "signed URL object key" --depth 2 --limit 20
-argos inspect --root C:\path\to\target --id N000012 --depth 2 --map-limit 80 --relation-limit 200 --max-hops 5 --chain-limit 10
+argos inspect --root C:\path\to\target --id N000012 --depth 2 --map-limit 80 --relation-limit 200 --max-hops 5 --chain-limit 10 --max-payload-bytes 24576
 argos map --root C:\path\to\target --id N000012 --depth 3 --limit 80
 argos chains --root C:\path\to\target --from N000012 --max-hops 5 --limit 20
 argos gaps --root C:\path\to\target --id N000012 --age-days 90
 argos stale --root C:\path\to\target --age-days 90 --limit 100
 ```
 
-Search returns lexical and structural matches with reasons and distance.
-`inspect` is the usual next call for a likely center. `map` is useful when the
+Search prioritizes exact names, aliases, rare symbols, and query coverage, then
+returns structural expansion with reasons and distance. `inspect` is the usual
+next call for a likely center. It returns a bounded note preview and records
+omissions in `output`; use `node get` for the full body when
+`output.nodeContentTruncated` is true. `map` is useful when the
 caller needs a wider neighborhood, while `chains` focuses on paths that reach
-another sink through directed technical relations. Inspection returns those
+another sink through directed causal technical relations. Authority and
+execution identity remain context and cannot bridge a chain. Inspection returns those
 paths as both `technicalChains` and the backward-compatible `chains`, while
 `contextRelations` keeps direct structure, evidence, and provenance separate.
 Maps report `truncated`, omitted counts, and a bounded frontier;

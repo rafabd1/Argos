@@ -157,7 +157,7 @@ const tools = [
     {
         name: "argos_inspect_node",
         title: "Inspect Node And Its Research Context",
-        description: "Return one canonical note with a bounded graph, objective coverage gaps, directed technical sink paths, separate context relations, and pending relation suggestions.",
+        description: "Return a payload-bounded preview of one canonical note with its graph, coverage gaps, causal technical sink paths, separate context relations, and pending untyped relation candidates. Use argos_get_node for the complete note when output.nodeContentTruncated is true.",
         inputSchema: schema({
             root: rootProperty,
             id: stringProp("Canonical node ID."),
@@ -165,14 +165,16 @@ const tools = [
             mapLimit: integerProp("Maximum compact nodes in the returned map.", 1, 500),
             relationLimit: integerProp("Maximum direct relations returned per direction.", 1, 1000),
             maxHops: integerProp("Maximum sink-path length.", 1, 7),
-            chainLimit: integerProp("Maximum nearby sink paths.", 1, 100)
+            chainLimit: integerProp("Maximum nearby sink paths.", 1, 100),
+            maxPayloadBytes: integerProp("Serialized structured-output budget. Defaults to 24576 bytes.", 8192, 131072)
         }, ["root", "id"]),
-        handler: ({ root, id, depth, mapLimit, relationLimit, maxHops, chainLimit }) => withDb(rootValue(root), (db) => db.inspect(stringValue(id), {
+        handler: ({ root, id, depth, mapLimit, relationLimit, maxHops, chainLimit, maxPayloadBytes }) => withDb(rootValue(root), (db) => db.inspect(stringValue(id), {
             depth: optionalNumber(depth),
             mapLimit: optionalNumber(mapLimit),
             relationLimit: optionalNumber(relationLimit),
             maxHops: optionalNumber(maxHops),
-            chainLimit: optionalNumber(chainLimit)
+            chainLimit: optionalNumber(chainLimit),
+            maxPayloadBytes: optionalNumber(maxPayloadBytes)
         }))
     },
     {
@@ -197,19 +199,19 @@ const tools = [
     {
         name: "argos_suggest_links",
         title: "Suggest Missing Relations",
-        description: "Find unlinked notes with shared symbols, concepts, neighbors, or sink composition potential. Suggestions remain separate from the canonical graph until reviewed.",
+        description: "Find unlinked notes with rare shared symbols, concepts, low-degree neighbors, or sink composition potential. Results are untyped candidates and remain outside the canonical graph until reviewed.",
         inputSchema: schema({ root: rootProperty, id: stringProp("Source node ID."), limit: integerProp("Maximum suggestions.", 1, 50) }, ["root", "id"]),
         handler: ({ root, id, limit }) => withDb(rootValue(root), (db) => db.suggestLinks(stringValue(id), optionalNumber(limit) ?? 10))
     },
     {
         name: "argos_review_link_suggestion",
         title: "Review Link Suggestion",
-        description: "Accept or reject a relation suggestion. Acceptance creates one explicit edge; callers may choose a more precise relation type.",
+        description: "Accept or reject an untyped relation candidate. Acceptance requires an explicit supported relation type and creates one canonical edge.",
         inputSchema: schema({
             root: rootProperty,
             id: stringProp("Suggestion ID."),
             action: enumProp(["accept", "reject"], "Review action."),
-            relationType: optionalStringProp("Explicit relation type to use when accepting.")
+            relationType: optionalStringProp("Required explicit relation type when accepting an untyped candidate.")
         }, ["root", "id", "action"]),
         handler: ({ root, id, action, relationType }) => withDb(rootValue(root), (db) => db.reviewSuggestion(stringValue(id), enumValue(action, ["accept", "reject"]), maybeString(relationType)))
     },
@@ -245,7 +247,7 @@ const tools = [
     {
         name: "argos_find_chains",
         title: "Find Sink Paths",
-        description: "Find bounded directed paths to sinks through technical relations. Context, evidence, ownership, and provenance links never bridge a chain; Argos does not infer exploitability.",
+        description: "Find bounded directed causal paths to sinks through technical relations. Context, evidence, authority, ownership, and provenance links never bridge a chain; Argos does not infer exploitability.",
         inputSchema: schema({
             root: rootProperty,
             fromId: stringProp("Starting node, usually a sink."),
@@ -454,11 +456,12 @@ function nodeListPageRecord(nodes, limit, offset, candidateCount, truncatedByBud
     };
 }
 function compactNodeListItem(node) {
+    const aliasCount = node.aliasCount;
     return {
         ...node,
         aliases: node.aliases.slice(0, NODE_LIST_ALIAS_LIMIT),
-        aliasCount: node.aliases.length,
-        aliasesTruncated: node.aliases.length > NODE_LIST_ALIAS_LIMIT
+        aliasCount,
+        aliasesTruncated: aliasCount > NODE_LIST_ALIAS_LIMIT
     };
 }
 function writeResponse(id, result, error) {

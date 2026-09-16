@@ -22,6 +22,8 @@ export interface KnowledgeNode {
 
 export interface NodeSummary extends Omit<KnowledgeNode, "content"> {
   excerpt: string;
+  aliasCount: number;
+  aliasesTruncated: boolean;
 }
 
 export interface NodeListItem extends NodeSummary {
@@ -60,7 +62,7 @@ export interface LinkSuggestion {
   id: number;
   publicId: string;
   fromId: string;
-  relationType: string;
+  relationType: string | null;
   toId: string;
   score: number;
   reasons: string[];
@@ -78,7 +80,7 @@ export interface SearchHit {
 }
 
 export interface GraphMap {
-  root: KnowledgeNode;
+  root: NodeSummary;
   nodes: NodeSummary[];
   edges: EdgeView[];
   depth: number;
@@ -101,6 +103,8 @@ export interface KnowledgeGap {
   nodeId: string;
   message: string;
   relatedNodeIds: string[];
+  relatedNodeCount: number;
+  relatedNodeIdsTruncated: boolean;
 }
 
 export interface KnowledgeInspection {
@@ -127,4 +131,24 @@ export interface KnowledgeInspection {
   pendingSuggestions: LinkSuggestion[];
   pendingSuggestionCount: number;
   pendingSuggestionsTruncated: boolean;
+  output: {
+    maxPayloadBytes: number;
+    serializedBytes: number;
+    truncatedByBudget: boolean;
+    nodeContentTruncated: boolean;
+    omitted: {
+      nodeContentChars: number;
+      nodeAliases: number;
+      outgoingRelations: number;
+      incomingRelations: number;
+      classifiedRelations: number;
+      supersededBy: number;
+      mapNodes: number;
+      mapEdges: number;
+      mapFrontierNodeIds: number;
+      gaps: number;
+      technicalChains: number;
+      pendingSuggestions: number;
+    };
+  };
 }

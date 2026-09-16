@@ -219,6 +219,19 @@ try {
     nextOffset = page.structuredContent.nextOffset;
   } while (true);
   assert.equal(allSinkIds.size, 26);
+  const boundedInspection = await call("argos_inspect_node", {
+    root: target,
+    id: componentId,
+    depth: 2,
+    mapLimit: 500,
+    relationLimit: 1000,
+    chainLimit: 100,
+    maxPayloadBytes: 8192
+  });
+  assert.equal(boundedInspection.structuredContent.output.maxPayloadBytes, 8192);
+  assert.equal(boundedInspection.structuredContent.output.truncatedByBudget, true);
+  assert(Buffer.byteLength(JSON.stringify(boundedInspection.structuredContent), "utf8") <= 8192);
+  assert(Buffer.byteLength(boundedInspection.content[0].text, "utf8") <= 8192);
   const aliasedSummary = nodePage.structuredContent.nodes.find((node) => node.title === "MCP payload budget sink");
   assert(aliasedSummary);
   assert.equal(aliasedSummary.aliasCount, 100);

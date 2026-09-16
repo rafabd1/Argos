@@ -36,7 +36,7 @@ Relations are explicit and directional unless `related_to` is used:
 
 Prefer the most precise relation that the code or evidence proves. Put conditions, version limits, and uncertainty in the connected notes rather than inventing a relation type for every qualifier.
 
-Technical chain traversal uses the recorded direction of `exposes`, `calls`, `flows_to`, `transforms`, `reads`, `writes`, `produces`, `consumes`, `influences`, `crosses`, `runs_as`, and `affects`. A hypothesis may begin with one outgoing `depends_on` step. Structure, evidence, provenance, and weak-association links remain visible as context but do not create a sink path.
+Technical chain traversal uses the recorded direction of `exposes`, `calls`, `flows_to`, `transforms`, `reads`, `writes`, `produces`, `consumes`, `influences`, `crosses`, and `affects`. A hypothesis may begin with one outgoing `depends_on` step. Structure, authority such as `runs_as`, evidence, provenance, and weak-association links remain visible as context but do not create a sink path.
 
 `tests` points from a test to the exact item exercised. `supports` and `refutes` connect evidence to a conclusion only when the observed scope warrants that conclusion. Partial evidence can remain linked to a premise without claiming a global verdict.
 
@@ -52,4 +52,4 @@ Campaign plans, progress logs, tool issues, messages, and runtime state are not 
 
 ## Suggestions
 
-Suggested links live outside the graph until accepted. Their score and reasons help triage. Acceptance requires a valid relation type and creates a normal edge. Rejection keeps a review trail without changing the graph.
+Suggested links live outside the graph as untyped candidates until accepted. Their score and reasons help triage but do not establish a relation. Acceptance requires a valid explicit relation type and creates a normal edge. Rejection keeps a review trail without changing the graph. Shared versions, hashes, broad project names, or high-degree neighbors are not enough to accept a link.

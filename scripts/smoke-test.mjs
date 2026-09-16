@@ -21,7 +21,7 @@ const env = {
 
 try {
   const version = run("--version");
-  assert.equal(version.version, "0.1.5");
+  assert.equal(version.version, "0.1.6");
   const initialized = run("init", "--root", target, "--name", "Smoke Target");
   assert.equal(initialized.initialized, true);
   const namedDefaultExport = run("export", "obsidian", "--root", target);
@@ -105,6 +105,16 @@ try {
   assert(chains.some((chain) => chain.nodes.at(-1).publicId === sinkB.publicId));
   const search = run("search", "--root", target, "--query", "entry.path build worker", "--depth", "2");
   assert(search.some((hit) => hit.node.publicId === data.publicId));
+  const symbolNode = create(
+    "component",
+    "Tungstenite acceptance tracing",
+    "The accept path records request spans through query_spans before protocol handoff.",
+    ["query_spans", "accept tracing"]
+  );
+  const exactSymbolSearch = run("search", "--root", target, "--query", "query_spans", "--depth", "0", "--limit", "5");
+  assert.equal(exactSymbolSearch[0].node.publicId, symbolNode.publicId);
+  const compoundSymbolSearch = run("search", "--root", target, "--query", "tungstenite accept query_spans", "--depth", "0", "--limit", "5");
+  assert(compoundSymbolSearch.slice(0, 3).some((hit) => hit.node.publicId === symbolNode.publicId));
 
   const updated = run("node", "update", "--root", target, "--id", hypothesis.publicId, "--mode", "append", "--content", "Reopen if another archive producer bypasses normalization.");
   assert(updated.content.includes("Reopen"));
@@ -166,13 +176,19 @@ try {
   legacyDb.prepare(
     "INSERT INTO node_revisions(node_id, title, aliases_json, content, replaced_at, previous_updated_at) VALUES (?, ?, ?, ?, ?, ?)"
   ).run(hypothesis.id, hypothesis.title, "[]", "Former body", new Date().toISOString(), hypothesis.updatedAt);
+  legacyDb.prepare(`
+    INSERT INTO link_suggestions(from_node_id, relation_type, to_node_id, score, reasons_json, status, created_at)
+    VALUES (?, 'related_to', ?, 0.5, '["legacy similarity"]', 'pending', ?)
+  `).run(symbolNode.id, sinkB.id, new Date().toISOString());
   legacyDb.prepare("UPDATE metadata SET value = '2' WHERE key = 'schema_version'").run();
   legacyDb.close();
   const migratedStatus = run("status", "--root", target);
-  assert.equal(migratedStatus.schemaVersion, 3);
+  assert.equal(migratedStatus.schemaVersion, 4);
   assert.equal("revisions" in migratedStatus.counts, false);
   const migratedDb = new DatabaseSync(path.join(target, ".argos", "knowledge.sqlite"));
   assert.equal(migratedDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'node_revisions'").get(), undefined);
+  assert.equal(migratedDb.prepare("SELECT relation_type FROM link_suggestions WHERE reasons_json = '[\"legacy similarity\"]'").get().relation_type, "candidate");
+  migratedDb.prepare("UPDATE link_suggestions SET status = 'rejected', reviewed_at = ? WHERE reasons_json = '[\"legacy similarity\"]'").run(new Date().toISOString());
   migratedDb.close();
   const invalidInteger = runFailure("map", "--root", target, "--id", hypothesis.publicId, "--limit", "2.5");
   assert(invalidInteger.includes("--limit must be an integer"));
@@ -192,7 +208,7 @@ try {
 
   const vault = path.join(temp, "vault");
   const exported = run("export", "obsidian", "--root", target, "--out", vault);
-  assert.equal(exported.nodeCount, 8);
+  assert.equal(exported.nodeCount, 9);
   assert(fs.existsSync(path.join(vault, "Argos Index.md")));
   assert(fs.existsSync(path.join(vault, "Argos Explorer.base")));
   assert.equal(fs.existsSync(path.join(vault, "Argos Knowledge Graph.canvas")), false);
@@ -248,7 +264,7 @@ try {
   assert(preservedCanvasExport.legacyFilesPreserved.includes(retiredCanvasPath));
   fs.unlinkSync(retiredCanvasPath);
   const concurrentExports = await Promise.all(Array.from({ length: 2 }, () => runAsync("export", "obsidian", "--root", target, "--out", vault)));
-  assert(concurrentExports.every((result) => result.nodeCount === 8));
+  assert(concurrentExports.every((result) => result.nodeCount === 9));
   const sinkNote = fs.readdirSync(vault, { recursive: true }).map(String).find((name) => name.includes("Archive file write"));
   assert(sinkNote);
   assert(fs.readFileSync(path.join(vault, sinkNote), "utf8").includes("[["));
@@ -294,7 +310,7 @@ try {
   const sameEdges = await Promise.all(Array.from({ length: 6 }, () => runAsync("link", "add", "--root", target, "--from", targetNode.publicId, "--type", "contains", "--to", canonicalConcurrent.publicId)));
   assert.equal(new Set(sameEdges.map((edge) => edge.publicId)).size, 1);
   const status = run("status", "--root", target);
-  assert.equal(status.counts.nodes, 17);
+  assert.equal(status.counts.nodes, 18);
   assert.equal(status.counts.isolatedNodes, 0);
   assert.equal(status.counts.broadRootLinks, 0);
   assert.deepEqual(status.integrityWarnings, []);
@@ -369,6 +385,9 @@ try {
   const relationCandidates = run("link", "suggest", "--root", target, "--id", suggestionSource.publicId, "--limit", "10");
   const suggested = relationCandidates.find((item) => item.to.publicId === suggestionTarget.publicId);
   assert(suggested, "expected a reviewable relation suggestion");
+  assert.equal(suggested.relationType, null);
+  const missingRelationType = runFailure("link", "accept", "--root", target, "--id", suggested.publicId);
+  assert(missingRelationType.includes("requires an explicit relation type"));
   const invalidReview = runFailure("link", "accept", "--root", target, "--id", suggested.publicId, "--type", "not_a_relation");
   assert(invalidReview.includes("Unknown relation type"));
   const stillPending = run("link", "list", "--root", target, "--status", "pending");
@@ -378,6 +397,10 @@ try {
   assert.equal(acceptedSuggestion.edge.type, "influences");
   assert.equal(acceptedSuggestion.edge.fromId, suggestionSource.publicId);
   assert.equal(acceptedSuggestion.edge.toId, suggestionTarget.publicId);
+  const noisySuggestionTarget = create("component", "Alpha adapter surface", "Smoke Target v16.2.12 commit abcdef123456 records alpha quartz behavior.");
+  const noisySuggestionSource = create("component", "Beta renderer boundary", "Smoke Target v16.2.12 commit abcdef123456 records beta zephyr behavior.");
+  const noisySuggestions = run("link", "suggest", "--root", target, "--id", noisySuggestionSource.publicId, "--limit", "50");
+  assert.equal(noisySuggestions.some((item) => item.to.publicId === noisySuggestionTarget.publicId), false);
   const reconsiderTarget = create("component", "Deferred token consumer", "Consumes `recheck.token` after a delayed transition.");
   const reconsiderSource = create("component", "Deferred token propagation", "Carries `recheck.token` toward a later consumer.");
   const firstSuggestion = run("link", "suggest", "--root", target, "--id", reconsiderSource.publicId, "--limit", "10")
@@ -408,6 +431,20 @@ try {
   assert.equal(inspection.context.node.publicId, sinkA.publicId);
   assert(inspection.map.nodes.some((node) => node.publicId === alternateData.publicId));
   assert(inspection.gaps.some((gap) => gap.code === "partial_sink_path_coverage"));
+  assert(Buffer.byteLength(JSON.stringify(inspection), "utf8") <= inspection.output.maxPayloadBytes);
+  const largeNoteFile = path.join(temp, "large-target-note.md");
+  fs.writeFileSync(largeNoteFile, `Current target knowledge.\n\n${"Detailed implementation evidence. ".repeat(1_500)}END-OF-COMPLETE-NOTE`);
+  const largeNote = run(
+    "node", "create", "--root", target, "--type", "note", "--title", "Large canonical target note",
+    "--content-file", largeNoteFile,
+    "--link-to", targetNode.publicId, "--relation", "contains", "--direction", "incoming"
+  ).node;
+  const boundedInspection = run("inspect", "--root", target, "--id", largeNote.publicId, "--max-payload-bytes", "8192");
+  assert(Buffer.byteLength(JSON.stringify(boundedInspection), "utf8") <= 8192);
+  assert.equal(boundedInspection.output.nodeContentTruncated, true);
+  assert(boundedInspection.output.omitted.nodeContentChars > 0);
+  assert.equal(boundedInspection.context.node.content.includes("END-OF-COMPLETE-NOTE"), false);
+  assert(run("node", "get", "--root", target, "--id", largeNote.publicId).node.content.includes("END-OF-COMPLETE-NOTE"));
 
   const graphTarget = path.join(temp, "directed-graph-target");
   fs.mkdirSync(graphTarget, { recursive: true });
@@ -440,6 +477,25 @@ try {
   assert.deepEqual(graphInspection.chains, graphInspection.technicalChains);
   assert(graphInspection.contextRelations.some((edge) => edge.type === "depends_on"));
   assert.equal(graphInspection.technicalChains.some((chain) => chain.nodes.at(-1).publicId === contextOnlySink.publicId), false);
+  const authorityPrincipal = createAt(graphTarget, "principal", "Frame worker identity", "Runs decoded frame work.");
+  const authorityOnlyBehavior = createAt(graphTarget, "behavior", "Authority-only frame context", "A behavior linked only through execution identity.");
+  const authorityOnlySink = createAt(graphTarget, "sink", "Unrelated authority sink", "A sink sharing only an execution identity.");
+  linkAt(graphTarget, authorityOnlyBehavior.publicId, "runs_as", authorityPrincipal.publicId);
+  linkAt(graphTarget, authorityPrincipal.publicId, "influences", authorityOnlySink.publicId);
+  assert.equal(run("chains", "--root", graphTarget, "--from", authorityOnlyBehavior.publicId).length, 0);
+  const authorityInspection = run("inspect", "--root", graphTarget, "--id", authorityOnlyBehavior.publicId);
+  assert(authorityInspection.contextRelations.some((edge) => edge.type === "runs_as"));
+  const genericOnlyResult = run(
+    "node", "create", "--root", graphTarget, "--type", "component", "--title", "Legacy generic-only component",
+    "--content", "A legacy item used to verify repair diagnostics.",
+    "--link-to", graphRoot.publicId, "--relation", "contains", "--direction", "incoming"
+  );
+  linkAt(graphTarget, genericOnlyResult.node.publicId, "related_to", graphComponent.publicId);
+  run("link", "remove", "--root", graphTarget, "--id", genericOnlyResult.initialRelation.publicId);
+  const genericStatus = run("status", "--root", graphTarget);
+  assert(genericStatus.counts.genericOnlyNodes >= 1);
+  assert(genericStatus.integrityWarnings.some((warning) => warning.code === "generic_only_nodes"));
+  assert(run("gaps", "--root", graphTarget, "--id", genericOnlyResult.node.publicId).some((gap) => gap.code === "generic_only_node"));
   const graphHypothesisGaps = run("gaps", "--root", graphTarget, "--id", graphHypothesis.publicId);
   assert(graphHypothesisGaps.some((gap) => gap.code === "hypothesis_partial_premise_coverage" && gap.relatedNodeIds.includes(graphData.publicId)));
   assert(graphHypothesisGaps.some((gap) => gap.code === "hypothesis_evidence_stops_before_sink" && gap.relatedNodeIds.includes(graphSink.publicId)));

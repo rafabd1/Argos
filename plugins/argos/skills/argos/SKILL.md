@@ -18,7 +18,7 @@ Use the workspace root for every Argos call. Initialize it once when `.argos/kno
 
 Do not load the whole graph. Expand around the current item, then follow only relations that can change the research decision.
 
-Use `inspect` after search when one node is the likely center. It returns the note, local map, coverage gaps, nearby sink paths, and pending suggestions in one bounded call.
+Use `inspect` after search when one node is the likely center. It returns a bounded note preview, local map, coverage gaps, nearby sink paths, and pending suggestions. When `output.nodeContentTruncated` is true, read the complete body with `get_node` instead of widening the whole inspection.
 
 At a useful research pause, inspect the active hypothesis and its terminal sinks or boundaries again. This catches changed premises before the next decision.
 
@@ -53,7 +53,8 @@ together. `related_to` is not accepted for this first attachment. If creation
 rejects a missing or generic relation, resolve or inspect the right existing
 node and retry with the concrete hierarchy, flow, authority, test, premise, or
 evidence relation. Never invent a weak link merely to make the node pass.
-When `status` reports isolated nodes or broad root links, call `find_gaps`
+When `status` reports isolated nodes, broad root links, generic-only nodes, or
+high-fanout generic hubs, call `find_gaps`
 without an ID for the actionable node and edge list. Repair each item by adding
 the exact relation first, then remove the stale broad edge.
 
@@ -90,7 +91,7 @@ When older research becomes relevant again, create or recover only the prior con
 
 ## Find Missing Combinations
 
-Use relation suggestions and sink paths as prompts for inspection. They do not become facts until checked. Sink paths follow edge direction and technical relations; ownership, evidence, and provenance links remain context and cannot manufacture a chain.
+Use relation suggestions and sink paths as prompts for inspection. They do not become facts until checked. Suggestions have no relation type until you choose one from code or evidence. Sink paths follow edge direction and causal technical relations; authority, ownership, evidence, and provenance links remain context and cannot manufacture a chain.
 
 The gap engine reports what the map establishes, such as a test linked to only part of a sink's recorded inputs or a boundary linked to some paths but not others. Treat each result as a question to settle in code or a test, never as proof of a vulnerability or proof that an unlisted path exists.
 
@@ -101,7 +102,7 @@ For a meaningful sink:
 - ask whether its side effect becomes a useful gadget under another component's authority or timing;
 - query paths to related sinks;
 - review nearby tests and old conclusions;
-- suggest links, then accept only the relation the code or evidence supports.
+- suggest links, then accept with the exact relation type the code or evidence supports. Reject candidates based only on common versions, names, or broad similarity.
 
 The goal is to expose useful combinations, not to manufacture a chain between unrelated behaviors.
 
