@@ -2,6 +2,21 @@
 
 All notable changes to Argos are documented here.
 
+## [0.1.6] - 2026-09-16
+
+### Changed
+
+- Search now ranks exact titles, aliases, rare symbols, and query coverage before broad content overlap.
+- Link suggestions are untyped candidates until review. Accepting one now requires an explicit relation type.
+- Sink-path discovery follows causal technical edges and keeps execution identity and authority links as context.
+- Node summaries and `inspect` responses have explicit size limits and truncation metadata. Complete notes remain available through `node get` and `argos_get_node`.
+- Status and gap checks now identify generic-only nodes and high-fanout `related_to` hubs for targeted graph repair.
+
+### Fixed
+
+- Common versions, hashes, project names, and high-degree neighbors no longer dominate missing-link suggestions.
+- Pending legacy `related_to` suggestions migrate safely to untyped candidates without changing accepted graph edges.
+
 ## [0.1.5] - 2026-09-14
 
 ### Changed

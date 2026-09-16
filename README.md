@@ -126,10 +126,11 @@ revalidation.
 
 ## Retrieval
 
-`argos search` combines full-text search, token overlap, code and path
-identifiers, and bounded graph expansion. `argos inspect` returns the current
-note, its local map, objective coverage gaps, directed technical sink paths,
-separate context relations, and pending link suggestions in one response.
+`argos search` ranks exact names, aliases, rare code symbols, query coverage,
+and full-text matches, then applies bounded graph expansion. `argos inspect`
+returns a size-limited note preview, its local map, objective coverage gaps,
+directed causal sink paths, separate context relations, and pending untyped
+link candidates. Complete notes stay available through `argos node get`.
 
 `argos gaps` can surface cases where:
 
@@ -143,6 +144,7 @@ separate context relations, and pending link suggestions in one response.
 - a conclusion relies only on historical intel;
 - a reopened refuted hypothesis lacks an explicit change relation;
 - a sink lacks mapped authority, state, flow, or test context.
+- a node depends only on generic links or acts as a high-fanout generic hub.
 
 These results guide inspection. Code and evidence decide the conclusion.
 

@@ -65,21 +65,24 @@ and removals are also atomic.
 
 ## Retrieval
 
-Text retrieval combines SQLite FTS5, normalized token overlap, code and path
-identifiers, titles, and aliases. Argos then expands the strongest seeds through
-nearby graph relations with a distance penalty. Results include match reasons,
-distance, timestamps, and age.
+Text retrieval ranks exact titles and aliases first, then weighs query coverage,
+rare code and path identifiers, and SQLite FTS5 order. Common terms contribute
+less than symbols that occur in few notes. Argos can then expand the strongest
+seeds through nearby graph relations with a distance penalty. Results include
+match reasons, distance, timestamps, and age.
 
 `inspect` is the compact recovery operation. It returns:
 
-- the complete canonical note and direct relations;
+- a bounded preview of the canonical note and direct relations;
 - a bounded neighborhood of compact node summaries;
-- directed technical paths to other sinks;
+- directed causal technical paths to other sinks;
 - direct technical and contextual relations in separate arrays;
 - objective graph gaps;
 - pending relation suggestions touching the node.
 
-Map responses cap nodes and dense internal edges. They report truncation,
+Inspection and map responses cap nodes and dense internal edges. Inspection
+also applies a serialized byte budget and reports every omitted category. The
+complete canonical body remains available through the single-node read. Maps report truncation,
 omitted counts, and a short frontier of node IDs so the caller can continue
 with targeted reads. Gap checks use directed questions over the stored graph;
 a truncated presentation map is never used as proof that context is absent.
@@ -89,23 +92,24 @@ This keeps large target maps usable without losing linked context.
 
 ## Relation Discovery
 
-`suggest-links` ranks unlinked nodes through shared symbols, paths, concepts,
-common graph neighbors, and sink-to-sink composition potential. Each suggestion
-contains a score and plain reasons. Suggestions live outside the canonical
+`suggest-links` ranks unlinked nodes through rare shared symbols, concepts,
+low-degree graph neighbors, and sink-to-sink composition potential. Common
+versions and hashes do not provide useful evidence. Each result is an untyped
+candidate with `relationType: null`, a score, and plain reasons. Candidates live outside the canonical
 graph until accepted or rejected.
 
 A rejected suggestion returns to pending review when either endpoint changes
 and the relation is suggested again. The new reason records that the earlier
 review predates the changed knowledge.
 
-Acceptance validates the chosen relation and creates the edge in the same
+Acceptance requires and validates an explicit relation type, then creates the edge in the same
 transaction that marks the suggestion accepted. Duplicate edges return the
 existing edge.
 
 `chains` performs a bounded directed traversal from one node to other sinks.
-It follows execution, data, boundary, state, and effect relations. A hypothesis
+It follows causal execution, data, boundary, state, and effect relations. A hypothesis
 may use one outgoing `depends_on` edge to enter a technical path. Structure,
-evidence, provenance, and weak-association edges stay in the inspection context
+authority such as `runs_as`, evidence, provenance, and weak-association edges stay in the inspection context
 and cannot bridge two sinks. A returned path remains a navigation aid; it does
 not assert exploitability.
 
@@ -122,7 +126,7 @@ decisions. Checks include:
 - both supporting and refuting evidence on one hypothesis;
 - hypothesis premises not covered by conclusion-linked tests;
 - conclusion-linked tests that stop before a terminal sink;
-- a hypothesis whose premises do not reach a sink through directed technical links;
+- a hypothesis whose premises do not reach a sink through directed causal links;
 - a behavior that reaches a sink with no exact test relation;
 - conclusions supported or refuted only by intel;
 - a reopened refuted hypothesis with no explicit change relation;

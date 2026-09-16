@@ -57,11 +57,11 @@ argos link add --from <N...> --type <relation> --to <N...>
 argos link remove --id <E...>
 argos link suggest --id <N...> [--limit <n>]
 argos link list [--status pending|accepted|rejected]
-argos link accept --id <L...> [--type <relation>]
+argos link accept --id <L...> --type <relation>
 argos link reject --id <L...>
 
 argos search --query <text> [--type <type>] [--depth <0-3>] [--limit <n>]
-argos inspect --id <N...> [--depth <0-5>] [--map-limit <n>] [--relation-limit <n>] [--max-hops <1-7>] [--chain-limit <n>]
+argos inspect --id <N...> [--depth <0-5>] [--map-limit <n>] [--relation-limit <n>] [--max-hops <1-7>] [--chain-limit <n>] [--max-payload-bytes <8192-131072>]
 argos map --id <N...> [--depth <0-5>] [--limit <n>]
 argos chains --from <N...> [--max-hops <1-7>] [--limit <n>]
 argos gaps [--id <N...>] [--age-days <n>]
@@ -70,7 +70,9 @@ argos stale [--age-days <n>] [--limit <n>]
 
 MCP: `argos_add_link`, `argos_remove_link`, `argos_suggest_links`, `argos_review_link_suggestion`, `argos_search`, `argos_inspect_node`, `argos_map`, `argos_find_chains`, `argos_find_gaps`, `argos_list_old_knowledge`.
 
-`inspect` is the normal recovery call after search. It returns the canonical note, a bounded map, objective coverage gaps, directed technical sink paths, separate direct context relations, and pending suggestions without accepting any relation. `chains` remains a compatibility alias of `technicalChains` in this response. When `map.truncated` is true, follow `frontierNodeIds` with targeted reads; omitted context is never evidence of absence.
+`inspect` is the normal recovery call after search. It returns a bounded preview of the canonical note, a local map, objective coverage gaps, directed causal sink paths, separate direct context relations, and pending untyped suggestions. The default serialized budget is 24 KiB. Read `output` for omissions and use `node get` when `output.nodeContentTruncated` is true. `chains` remains a compatibility alias of `technicalChains`. When `map.truncated` is true, follow `frontierNodeIds` with targeted reads; omitted context is never evidence of absence.
+
+Link suggestions are similarity candidates, not graph facts. New candidates return `relationType: null`, and `link accept` always requires a concrete relation type. Do not accept a candidate merely because two notes share a version, project name, hash, or high-degree neighbor.
 
 ## Obsidian
 
