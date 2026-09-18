@@ -23,11 +23,39 @@ export interface ObsidianExportResult {
   manifestPath: string;
   indexPath: string;
   explorerPath: string;
+  graphConfigPath: string;
+  graphColorGroupsAdded: number;
+  graphConfigWarning: string | null;
   legacyFilesPreserved: string[];
+}
+
+interface ObsidianGraphConfigResult {
+  path: string;
+  groupsAdded: number;
+  updated: boolean;
+  warning: string | null;
+}
+
+interface ObsidianColorGroup {
+  query: string;
+  color: {
+    a: number;
+    rgb: number;
+  };
 }
 
 const RETIRED_GENERATED_FILES = new Set(["Argos Knowledge Graph.canvas"]);
 const LEGACY_EXPORT_FILES = ["Argos Knowledge Graph.canvas", "Argos Knowledge Graph.md"];
+const PRIMARY_NODE_COLOR_GROUPS: readonly ObsidianColorGroup[] = [
+  { query: "[type:component]", color: { a: 1, rgb: 0x2869ff } },
+  { query: "[type:boundary]", color: { a: 1, rgb: 0xfbef00 } },
+  { query: "[type:principal]", color: { a: 1, rgb: 0x9e41ff } },
+  { query: "[type:sink]", color: { a: 1, rgb: 0xc21800 } },
+  { query: "[type:test]", color: { a: 1, rgb: 0x61ebff } },
+  { query: "[type:hypothesis]", color: { a: 1, rgb: 0xf339ff } },
+  { query: "[type:finding]", color: { a: 1, rgb: 0xffffff } },
+  { query: "[type:guarantee]", color: { a: 1, rgb: 0x1cae9e } }
+];
 
 export function exportObsidian(db: ArgosDb, outputInput?: string, prune = false): ObsidianExportResult {
   const output = path.resolve(outputInput ?? defaultVaultPath(db.root, db.config.name));
@@ -60,6 +88,8 @@ function exportObsidianLocked(db: ArgosDb, output: string, prune: boolean): Obsi
   const explorerRelative = "Argos Explorer.base";
   writeFileAtomic(path.join(output, explorerRelative), renderExplorerBase());
   generatedFiles.push(explorerRelative);
+
+  const graphConfig = ensurePrimaryGraphColors(output);
 
   let filesPruned = 0;
   let modifiedFilesPreserved = 0;
@@ -108,14 +138,97 @@ function exportObsidianLocked(db: ArgosDb, output: string, prune: boolean): Obsi
     output,
     nodeCount: nodes.length,
     edgeCount: edges.length,
-    filesWritten: generatedFiles.length + 1,
+    filesWritten: generatedFiles.length + 1 + (graphConfig.updated ? 1 : 0),
     filesPruned,
     modifiedFilesPreserved,
     manifestPath,
     indexPath: path.join(output, indexRelative),
     explorerPath: path.join(output, explorerRelative),
+    graphConfigPath: graphConfig.path,
+    graphColorGroupsAdded: graphConfig.groupsAdded,
+    graphConfigWarning: graphConfig.warning,
     legacyFilesPreserved
   };
+}
+
+function ensurePrimaryGraphColors(output: string): ObsidianGraphConfigResult {
+  const graphConfigPath = path.join(output, ".obsidian", "graph.json");
+  let config: Record<string, unknown> = {};
+
+  if (fs.existsSync(graphConfigPath)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(fs.readFileSync(graphConfigPath, "utf8").replace(/^\uFEFF/, ""));
+    } catch {
+      return {
+        path: graphConfigPath,
+        groupsAdded: 0,
+        updated: false,
+        warning: "Obsidian graph settings were preserved because graph.json is not valid JSON."
+      };
+    }
+    if (!isJsonObject(parsed)) {
+      return {
+        path: graphConfigPath,
+        groupsAdded: 0,
+        updated: false,
+        warning: "Obsidian graph settings were preserved because graph.json is not a JSON object."
+      };
+    }
+    config = parsed;
+  }
+
+  if (config.colorGroups !== undefined && !Array.isArray(config.colorGroups)) {
+    return {
+      path: graphConfigPath,
+      groupsAdded: 0,
+      updated: false,
+      warning: "Obsidian graph settings were preserved because colorGroups is not an array."
+    };
+  }
+
+  const existingGroups = (config.colorGroups ?? []) as unknown[];
+  const existingQueries = new Set(existingGroups.flatMap((group) => {
+    if (!isJsonObject(group) || typeof group.query !== "string") return [];
+    return [normalizeGraphQuery(group.query)];
+  }));
+  const missingGroups = PRIMARY_NODE_COLOR_GROUPS.filter(
+    (group) => !existingQueries.has(normalizeGraphQuery(group.query))
+  );
+  if (missingGroups.length === 0) {
+    return {
+      path: graphConfigPath,
+      groupsAdded: 0,
+      updated: false,
+      warning: null
+    };
+  }
+
+  const nextConfig: Record<string, unknown> = {
+    ...config,
+    colorGroups: [
+      ...existingGroups,
+      ...missingGroups.map((group) => ({ query: group.query, color: { ...group.color } }))
+    ]
+  };
+  if (!("collapse-color-groups" in nextConfig)) {
+    nextConfig["collapse-color-groups"] = false;
+  }
+  writeFileAtomic(graphConfigPath, `${JSON.stringify(nextConfig, null, 2)}\n`);
+  return {
+    path: graphConfigPath,
+    groupsAdded: missingGroups.length,
+    updated: true,
+    warning: null
+  };
+}
+
+function normalizeGraphQuery(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function renderNote(

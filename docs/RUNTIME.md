@@ -175,6 +175,12 @@ and embeds filtered Bases views without linking every note to a central file.
 Free-form note text that contains literal Obsidian wikilink syntax is escaped in
 the projection, so route forms such as `[[...slug]]` do not create ghost nodes.
 
+The export adds high-contrast Graph View groups for components, boundaries,
+principals, sinks, tests, hypotheses, findings, and guarantees. An existing
+group with the same type query keeps its chosen color. Other groups and graph
+settings remain unchanged. An invalid `.obsidian/graph.json` is preserved and
+reported through `graphConfigWarning`.
+
 The state contains no persistent process or fixed workspace root. Internal
 vault paths follow the `root` passed by the current tool after a move or copy.
 External custom vault paths remain unchanged.

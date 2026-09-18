@@ -86,7 +86,10 @@ refresh it when the configured interval has elapsed. Use
 `argos obsidian sync status|refresh|disable` to inspect, force, or disable it.
 The projection emits each directed relation once, keeps incoming context in the
 note without duplicating graph links, and provides `Argos Explorer.base` for
-filtered views when the Obsidian Bases core plugin is enabled.
+filtered views when the Obsidian Bases core plugin is enabled. It also adds
+high-contrast Graph View groups for components, boundaries, principals, sinks,
+tests, hypotheses, findings, and guarantees. Existing groups, custom colors,
+and other graph preferences remain unchanged.
 
 ## Knowledge Model
 

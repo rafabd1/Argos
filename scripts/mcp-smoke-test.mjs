@@ -99,6 +99,11 @@ try {
   assert.equal(component.structuredContent.created, true);
   assert.equal(sink.structuredContent.created, true);
   const sinkId = sink.structuredContent.node.publicId;
+  const mcpVault = path.join(temp, "mcp-vault");
+  const obsidianExport = await call("argos_export_obsidian", { root: target, output: mcpVault, prune: false });
+  assert.equal(obsidianExport.structuredContent.graphColorGroupsAdded, 8);
+  assert.equal(obsidianExport.structuredContent.graphConfigWarning, null);
+  assert.equal(JSON.parse(fs.readFileSync(obsidianExport.structuredContent.graphConfigPath, "utf8")).colorGroups.length, 8);
   const rejectedFlatLink = await call("argos_add_link", { root: target, fromId: targetId, type: "contains", toId: sinkId });
   assert.equal(rejectedFlatLink.isError, true);
   assert(rejectedFlatLink.structuredContent.error.includes("specific node"));
