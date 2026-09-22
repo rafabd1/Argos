@@ -3,14 +3,14 @@
   "owner": {
     "name": "Vyntra Research"
   },
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Offensive security research framework and agent tools for Codex, OpenCode, and Claude Code.",
   "plugins": [
     {
       "name": "argos",
       "source": "./plugins/argos",
       "description": "Build and query an offensive security knowledge map through an MCP server and agent skills.",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "author": {
         "name": "Vyntra Research"
       },

@@ -1,6 +1,6 @@
 {
   "name": "argos",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "An offensive security research framework, MCP server, and agent plugin for Codex, OpenCode, and Claude Code.",
   "author": {
     "name": "Vyntra Research"
