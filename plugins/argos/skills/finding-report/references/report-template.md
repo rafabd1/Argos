@@ -12,6 +12,12 @@ Use natural, direct language. The report should not read like a legal document,
 a checklist, or an AI-generated worksheet. Prefer short paragraphs, useful
 bullets, and no long sections unless the evidence requires them.
 
+Report the exact stable release used for reproduction. Do not use canary or
+other prerelease results as proof that a stable version is affected. Omit
+routine file hashes. Include a checksum only when comparing bytes before and
+after a relevant processing step is needed to prove the issue; explain what
+was compared and why the comparison matters.
+
 Do not mention local paths, agent roles, memory files, Argos, or the research
 workflow. When adjusting a draft, write the external report itself, not a reply
 to the researcher or a note about local work.

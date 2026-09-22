@@ -138,6 +138,8 @@ Do not call a broad area covered because the visible wrapper was read. State wha
 
 Before treating a candidate as finished, search for realistic impact elevation. Check alternate consumers, stronger authority transitions, durable effects, and combinations with other mapped sinks. Keep the strongest impact that works in a common, correctly configured scenario. Artificially weakened limits, trust, permissions, or isolation do not establish impact.
 
+Validate and report findings against an official stable release, not a canary or other prerelease build. A prerelease may suggest a lead, but it cannot stand in for proof on a stable version. Record the exact stable version tested.
+
 ## Command Reference
 
 Read [references/commands.md](references/commands.md) for the full CLI and MCP surface. Read [references/knowledge-model.md](references/knowledge-model.md) when choosing node or relation types.

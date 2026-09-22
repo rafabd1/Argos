@@ -11,9 +11,11 @@ Record only durable target knowledge in Argos. Keep run progress, harness operat
 
 ## Build A Decisive Test
 
-Identify the attacker-controlled input, target version, normal configuration, entry point, state, sink, and observable result. Add negative controls that distinguish the suspected mechanism from a nearby expected behavior.
+Identify the attacker-controlled input, exact stable target release, normal configuration, entry point, state, sink, and observable result. Do not use a canary or other prerelease build to validate a finding; reproduce a lead on a stable release before drawing that conclusion. Add negative controls that distinguish the suspected mechanism from a nearby expected behavior.
 
 Use a small harness, trace, debugger, protocol client, or manual black-box sequence when it gives a clear oracle. Preserve useful artifacts in an `artifact` node. Point `tests` at each exact component, behavior, boundary, guarantee, or sink that the run exercised.
+
+Do not compute hashes as routine proof. Use a checksum only when byte identity across a real processing step, such as an upload or archive transformation, is needed to settle the mechanism. State which inputs and outputs it compares; otherwise preserve the relevant bytes or observable behavior directly.
 
 ## Bound The Result
 

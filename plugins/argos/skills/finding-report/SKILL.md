@@ -29,3 +29,7 @@ List the proven impacts, preferably as short bullet points. Keep prerequisites a
 Each step needs the action and expected output. Keep long interpretation outside the numbered action, in the PoC details or one short note after the steps. Remove repeated explanations.
 
 Use only facts supported by the linked Argos evidence. Translate internal node IDs into the code, request, object, or behavior a triager can verify.
+
+State the exact stable release on which the issue was reproduced. Do not report a canary, nightly, or other prerelease result as proof of an affected stable version.
+
+Leave out hashes of files, scripts, logs, screenshots, and other artifacts when they add no proof. Include a checksum only when the bytes may change during a relevant step, such as upload or archive processing, and comparing the input and output is necessary to establish the flaw. Name both sides of the comparison and explain the result. A hash is not a substitute for showing the behavior.

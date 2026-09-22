@@ -2,6 +2,13 @@
 
 All notable changes to Argos are documented here.
 
+## [0.1.8] - 2026-09-22
+
+### Changed
+
+- Research and report guidance now requires reproduction on an official stable release instead of relying on canary or other prerelease builds.
+- Evidence and report guidance now limits checksums to cases where comparing bytes across processing is needed to prove the issue.
+
 ## [0.1.7] - 2026-09-16
 
 ### Added
