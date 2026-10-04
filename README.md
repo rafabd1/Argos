@@ -130,10 +130,12 @@ revalidation.
 ## Retrieval
 
 `argos search` ranks exact names, aliases, rare code symbols, query coverage,
-and full-text matches, then applies bounded graph expansion. `argos inspect`
+and full-text matches, returns bounded matching excerpts with line positions,
+then applies bounded graph expansion. `argos inspect`
 returns a size-limited note preview, its local map, objective coverage gaps,
 directed causal sink paths, separate context relations, and pending untyped
-link candidates. Complete notes stay available through `argos node get`.
+link candidates. `argos node get` reads selected content windows by line or
+character cursor instead of returning an unlimited note.
 
 `argos gaps` can surface cases where:
 

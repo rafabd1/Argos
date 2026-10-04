@@ -21,7 +21,7 @@ const env = {
 
 try {
   const version = run("--version");
-  assert.equal(version.version, "0.1.8");
+  assert.equal(version.version, "0.1.9");
   const initialized = run("init", "--root", target, "--name", "Smoke Target");
   assert.equal(initialized.initialized, true);
   const namedDefaultExport = run("export", "obsidian", "--root", target);
@@ -126,7 +126,11 @@ try {
   const chains = run("chains", "--root", target, "--from", sinkA.publicId, "--max-hops", "4");
   assert(chains.some((chain) => chain.nodes.at(-1).publicId === sinkB.publicId));
   const search = run("search", "--root", target, "--query", "entry.path build worker", "--depth", "2");
-  assert(search.some((hit) => hit.node.publicId === data.publicId));
+  assert(search.results.some((hit) => hit.node.publicId === data.publicId));
+  const contentSearch = run("search", "--root", target, "--query", "path supplied by an imported archive", "--depth", "0");
+  const dataSearchHit = contentSearch.results.find((hit) => hit.node.publicId === data.publicId);
+  assert(dataSearchHit.matches.some((match) => match.field === "content" && match.text.includes("path supplied")));
+  assert(dataSearchHit.matches.some((match) => match.field === "content" && match.lineStart >= 1));
   const symbolNode = create(
     "component",
     "Tungstenite acceptance tracing",
@@ -134,9 +138,11 @@ try {
     ["query_spans", "accept tracing"]
   );
   const exactSymbolSearch = run("search", "--root", target, "--query", "query_spans", "--depth", "0", "--limit", "5");
-  assert.equal(exactSymbolSearch[0].node.publicId, symbolNode.publicId);
+  assert.equal(exactSymbolSearch.results[0].node.publicId, symbolNode.publicId);
   const compoundSymbolSearch = run("search", "--root", target, "--query", "tungstenite accept query_spans", "--depth", "0", "--limit", "5");
-  assert(compoundSymbolSearch.slice(0, 3).some((hit) => hit.node.publicId === symbolNode.publicId));
+  assert(compoundSymbolSearch.results.slice(0, 3).some((hit) => hit.node.publicId === symbolNode.publicId));
+  const phraseSearch = run("search", "--root", target, "--query", "request spans through query_spans", "--match-mode", "phrase", "--depth", "0");
+  assert.equal(phraseSearch.results[0].node.publicId, symbolNode.publicId);
 
   const updated = run("node", "update", "--root", target, "--id", hypothesis.publicId, "--mode", "append", "--content", "Reopen if another archive producer bypasses normalization.");
   assert(updated.content.includes("Reopen"));
@@ -407,6 +413,8 @@ try {
   const symbolReview = runReview("node", "create", "--root", target, "--type", "component", "--title", "Normalized action runner", "--content", "The path reaches `SharedDispatcher.execute` with `DispatchEnvelope.payload` under a different label.");
   assert.equal(symbolReview.resolutionRequired, true);
   assert(symbolReview.candidates.some((candidate) => candidate.node.publicId === symbolSource.publicId && candidate.reasons.some((reason) => reason.includes("shared identifier"))));
+  const symbolCandidate = symbolReview.candidates.find((candidate) => candidate.node.publicId === symbolSource.publicId);
+  assert(symbolCandidate.matches.some((match) => match.field === "content" && match.text.includes("SharedDispatcher.execute")));
   const boundary = create("boundary", "Archive extraction boundary", "Archive-controlled data crosses into the workspace filesystem.");
   const guarantee = create("guarantee", "Extraction root containment", "The path check guards writes only after the normal archive decoder has produced an entry.");
   link(data.publicId, "crosses", boundary.publicId);
@@ -493,7 +501,23 @@ try {
   assert.equal(boundedInspection.output.nodeContentTruncated, true);
   assert(boundedInspection.output.omitted.nodeContentChars > 0);
   assert.equal(boundedInspection.context.node.content.includes("END-OF-COMPLETE-NOTE"), false);
-  assert(run("node", "get", "--root", target, "--id", largeNote.publicId).node.content.includes("END-OF-COMPLETE-NOTE"));
+  const firstLargeWindow = run("node", "get", "--root", target, "--id", largeNote.publicId, "--char-limit", "4096");
+  assert.equal(firstLargeWindow.node.content.includes("END-OF-COMPLETE-NOTE"), false);
+  assert.equal(firstLargeWindow.node.contentWindow.hasMore, true);
+  assert(firstLargeWindow.node.content.length <= 4096);
+  const lineWindow = run("node", "get", "--root", target, "--id", largeNote.publicId, "--start-line", "3", "--line-limit", "1", "--char-limit", "512");
+  assert.equal(lineWindow.node.contentWindow.startLine, 3);
+  assert(lineWindow.node.content.startsWith("Detailed implementation evidence."));
+  let cursor = firstLargeWindow.node.contentWindow.nextOffset;
+  let foundEnd = false;
+  for (let page = 0; page < 20 && cursor !== null; page += 1) {
+    const window = run("node", "get", "--root", target, "--id", largeNote.publicId, "--content-offset", String(cursor), "--char-limit", "4096");
+    assert(window.node.content.length <= 4096);
+    foundEnd ||= window.node.content.includes("END-OF-COMPLETE-NOTE");
+    cursor = window.node.contentWindow.nextOffset;
+  }
+  assert.equal(foundEnd, true);
+  assert(runFailure("node", "get", "--root", target, "--id", largeNote.publicId, "--start-line", "1", "--content-offset", "0").includes("either startLine or contentOffset"));
 
   const graphTarget = path.join(temp, "directed-graph-target");
   fs.mkdirSync(graphTarget, { recursive: true });

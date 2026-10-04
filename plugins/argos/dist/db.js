@@ -8,6 +8,10 @@ exports.initializeArgos = initializeArgos;
 exports.nodePublicId = nodePublicId;
 exports.edgePublicId = edgePublicId;
 exports.suggestionPublicId = suggestionPublicId;
+exports.boundedNodeReceipt = boundedNodeReceipt;
+exports.boundedCreateNodeResult = boundedCreateNodeResult;
+exports.boundedMergeNodesResult = boundedMergeNodesResult;
+exports.boundedKnowledgeNode = boundedKnowledgeNode;
 const node_fs_1 = __importDefault(require("node:fs"));
 const locked_sqlite_1 = require("./locked-sqlite");
 const paths_1 = require("./paths");
@@ -39,6 +43,23 @@ const INSPECTION_DEFAULT_MAX_PAYLOAD_BYTES = 24 * 1024;
 const INSPECTION_MIN_PAYLOAD_BYTES = 8 * 1024;
 const INSPECTION_MAX_PAYLOAD_BYTES = 128 * 1024;
 const SUMMARY_ALIAS_LIMIT = 8;
+const NODE_READ_DEFAULT_LINE_LIMIT = 80;
+const NODE_READ_MAX_LINE_LIMIT = 500;
+const NODE_READ_DEFAULT_CHAR_LIMIT = 8 * 1024;
+const NODE_READ_MAX_CHAR_LIMIT = 32 * 1024;
+const NODE_READ_ALIAS_LIMIT = 20;
+const NODE_RECEIPT_CHAR_LIMIT = 2 * 1024;
+const NODE_RECEIPT_LINE_LIMIT = 40;
+const SEARCH_DEFAULT_SNIPPET_LIMIT = 2;
+const SEARCH_MAX_SNIPPET_LIMIT = 5;
+const SEARCH_DEFAULT_SNIPPET_CHARS = 360;
+const SEARCH_MIN_SNIPPET_CHARS = 120;
+const SEARCH_MAX_SNIPPET_CHARS = 1_000;
+const SEARCH_DEFAULT_MAX_PAYLOAD_BYTES = 24 * 1024;
+const SEARCH_MIN_MAX_PAYLOAD_BYTES = 8 * 1024;
+const SEARCH_MAX_MAX_PAYLOAD_BYTES = 64 * 1024;
+const SEARCH_MAX_QUERY_CHARS = 2_000;
+const SEARCH_MAX_MATCH_TERM_CHARS = 160;
 const TOP_LEVEL_NODE_TYPES = new Set(["component", "boundary", "principal", "note"]);
 class ArgosDb {
     root;
@@ -318,6 +339,27 @@ class ArgosDb {
             supersededBy
         };
     }
+    readContext(reference, options = {}) {
+        if (options.startLine !== undefined && options.contentOffset !== undefined) {
+            throw new Error("Use either startLine or contentOffset, not both");
+        }
+        const relationLimit = boundedInteger(options.relationLimit, 50, 1, 100);
+        const context = this.getContext(reference, relationLimit);
+        const supersededBy = context.supersededBy.slice(0, relationLimit);
+        return {
+            ...context,
+            node: boundedKnowledgeNode(context.node, {
+                startLine: options.startLine,
+                contentOffset: options.contentOffset,
+                lineLimit: options.lineLimit,
+                charLimit: options.charLimit,
+                aliasLimit: NODE_READ_ALIAS_LIMIT
+            }),
+            supersededBy,
+            supersededByTotal: context.supersededBy.length,
+            supersededByTruncated: context.supersededBy.length > supersededBy.length
+        };
+    }
     inspect(reference, options = {}) {
         const context = this.getContext(reference, options.relationLimit ?? 200);
         const suggestionCount = Number(this.db.prepare("SELECT COUNT(*) AS count FROM link_suggestions WHERE status = 'pending' AND (from_node_id = ? OR to_node_id = ?)").get(context.node.id, context.node.id).count ?? 0);
@@ -501,7 +543,12 @@ class ArgosDb {
             if (score >= 0.45) {
                 if (reasons.length === 0)
                     reasons.push("similar title or alias");
-                candidates.push({ node: summarizeNode(node), score: roundScore(score), reasons: [...new Set(reasons)] });
+                candidates.push({
+                    node: summarizeNode(node),
+                    score: roundScore(score),
+                    reasons: [...new Set(reasons)],
+                    matches: searchMatches(node, queryText, queryTerms, queryIdentifiers, 2, SEARCH_DEFAULT_SNIPPET_CHARS)
+                });
             }
         }
         return candidates.sort((a, b) => b.score - a.score || a.node.publicId.localeCompare(b.node.publicId)).slice(0, boundedInteger(limit, 10, 1, 100));
@@ -510,9 +557,16 @@ class ArgosDb {
         const query = queryInput.trim();
         if (!query)
             throw new Error("Search query cannot be empty");
+        if (query.length > SEARCH_MAX_QUERY_CHARS)
+            throw new Error(`Search query cannot exceed ${SEARCH_MAX_QUERY_CHARS} characters`);
         const type = options.type ? (0, vocabulary_1.assertNodeType)(this.config, options.type) : undefined;
         const limit = boundedInteger(options.limit, 20, 1, 100);
+        const offset = boundedInteger(options.offset, 0, 0, 1_000_000);
         const depth = boundedInteger(options.depth, 1, 0, 3);
+        const matchMode = searchMatchMode(options.matchMode);
+        const snippetLimit = boundedInteger(options.snippetLimit, SEARCH_DEFAULT_SNIPPET_LIMIT, 1, SEARCH_MAX_SNIPPET_LIMIT);
+        const snippetChars = boundedInteger(options.snippetChars, SEARCH_DEFAULT_SNIPPET_CHARS, SEARCH_MIN_SNIPPET_CHARS, SEARCH_MAX_SNIPPET_CHARS);
+        const maxPayloadBytes = boundedInteger(options.maxPayloadBytes, SEARCH_DEFAULT_MAX_PAYLOAD_BYTES, SEARCH_MIN_MAX_PAYLOAD_BYTES, SEARCH_MAX_MAX_PAYLOAD_BYTES);
         const nodes = this.allNodes().filter((node) => !type || node.type === type);
         const ftsIds = this.ftsMatches(query, Math.max(50, limit * 4));
         const queryTerms = meaningfulTerms(query);
@@ -532,6 +586,15 @@ class ArgosDb {
             const titleTerms = meaningfulTerms(node.title);
             const aliasTerms = meaningfulTerms(node.aliases.join(" "));
             const bodyTerms = meaningfulTerms(`${node.title} ${node.aliases.join(" ")} ${node.content}`);
+            const normalizedNodeText = normalizeIdentity(`${node.title} ${node.aliases.join(" ")} ${node.content}`);
+            const phraseMatched = normalizedQuery.length > 0 && normalizedNodeText.includes(normalizedQuery);
+            const sharedTerms = intersection(queryTerms, bodyTerms);
+            const modeMatched = matchMode === "hybrid"
+                || (matchMode === "phrase" && phraseMatched)
+                || (matchMode === "all_terms" && queryTerms.size > 0 && sharedTerms.length === queryTerms.size)
+                || (matchMode === "any_terms" && sharedTerms.length > 0);
+            if (!modeMatched)
+                continue;
             const titleCoverage = weightedQueryCoverage(queryTerms, titleTerms, termFrequency, nodes.length);
             const aliasCoverage = weightedQueryCoverage(queryTerms, aliasTerms, termFrequency, nodes.length);
             const bodyCoverage = weightedQueryCoverage(queryTerms, bodyTerms, termFrequency, nodes.length);
@@ -562,56 +625,86 @@ class ArgosDb {
                 score = Math.min(1, score + Math.max(0.005, 0.035 - ftsPosition * 0.001));
                 reasons.push("full-text match");
             }
+            if (phraseMatched) {
+                score = Math.max(score, normalizedQuery === normalizedTitle || normalizedAliases.includes(normalizedQuery) ? score : 0.86);
+                reasons.push("exact phrase in note");
+            }
             if (score >= 0.1) {
-                seeds.push({ node: summarizeNode(node), score: roundScore(score), matchReasons: [...new Set(reasons.length ? reasons : ["content overlap"])], distance: 0 });
+                seeds.push({
+                    node: summarizeNode(node),
+                    score: roundScore(score),
+                    matchReasons: [...new Set(reasons.length ? reasons : ["content overlap"])],
+                    matches: searchMatches(node, query, queryTerms, queryIdentifiers, snippetLimit, snippetChars),
+                    distance: 0
+                });
             }
         }
         seeds.sort((a, b) => searchIdentityPriority(b) - searchIdentityPriority(a)
             || b.score - a.score
             || b.node.updatedAt.localeCompare(a.node.updatedAt));
-        if (depth === 0)
-            return seeds.slice(0, limit);
         const result = new Map();
-        const edges = this.getAllEdgeViews();
-        const nodeById = new Map(this.allNodes().map((node) => [node.publicId, node]));
-        const queue = [];
-        for (const seed of seeds.slice(0, Math.min(limit, 8))) {
+        for (const seed of seeds)
             result.set(seed.node.publicId, seed);
-            queue.push({ id: seed.node.publicId, distance: 0, seedScore: seed.score });
-        }
-        while (queue.length > 0) {
-            const current = queue.shift();
-            if (current.distance >= depth)
-                continue;
-            for (const edge of edges) {
-                let neighborId = null;
-                if (edge.fromId === current.id)
-                    neighborId = edge.toId;
-                else if (edge.toId === current.id)
-                    neighborId = edge.fromId;
-                if (!neighborId)
+        if (depth > 0) {
+            const edges = this.getAllEdgeViews();
+            const nodeById = new Map(this.allNodes().map((node) => [node.publicId, node]));
+            const queue = [];
+            for (const seed of seeds.slice(0, 8)) {
+                queue.push({ id: seed.node.publicId, distance: 0, seedScore: seed.score });
+            }
+            while (queue.length > 0) {
+                const current = queue.shift();
+                if (current.distance >= depth)
                     continue;
-                const distance = current.distance + 1;
-                const node = nodeById.get(neighborId);
-                if (!node || (type && node.type !== type))
-                    continue;
-                const candidate = {
-                    node: summarizeNode(node),
-                    score: roundScore(current.seedScore * Math.pow(0.62, distance)),
-                    matchReasons: [`graph neighbor through ${edge.type}`],
-                    distance,
-                    via: { fromId: current.id, edgeType: edge.type }
-                };
-                const previous = result.get(neighborId);
-                if (!previous || candidate.score > previous.score)
-                    result.set(neighborId, candidate);
-                if (!previous || distance < previous.distance)
-                    queue.push({ id: neighborId, distance, seedScore: current.seedScore });
+                for (const edge of edges) {
+                    let neighborId = null;
+                    if (edge.fromId === current.id)
+                        neighborId = edge.toId;
+                    else if (edge.toId === current.id)
+                        neighborId = edge.fromId;
+                    if (!neighborId)
+                        continue;
+                    const distance = current.distance + 1;
+                    const node = nodeById.get(neighborId);
+                    if (!node || (type && node.type !== type))
+                        continue;
+                    const candidate = {
+                        node: summarizeNode(node),
+                        score: roundScore(current.seedScore * Math.pow(0.62, distance)),
+                        matchReasons: [`graph neighbor through ${edge.type}`],
+                        matches: [],
+                        distance,
+                        via: { fromId: current.id, edgeType: edge.type }
+                    };
+                    const previous = result.get(neighborId);
+                    if (!previous || candidate.score > previous.score)
+                        result.set(neighborId, candidate);
+                    if (!previous || distance < previous.distance)
+                        queue.push({ id: neighborId, distance, seedScore: current.seedScore });
+                }
             }
         }
-        return [...result.values()].sort((a, b) => searchIdentityPriority(b) - searchIdentityPriority(a)
+        const ranked = [...result.values()].sort((a, b) => searchIdentityPriority(b) - searchIdentityPriority(a)
             || b.score - a.score
-            || a.distance - b.distance).slice(0, limit);
+            || a.distance - b.distance);
+        return fitSearchPage({
+            query,
+            matchMode,
+            results: ranked.slice(offset, offset + limit),
+            returned: 0,
+            totalMatches: ranked.length,
+            limit,
+            offset,
+            hasMore: false,
+            nextOffset: null,
+            depth,
+            output: {
+                maxPayloadBytes,
+                serializedBytes: 0,
+                truncatedByBudget: false,
+                omittedResults: 0
+            }
+        }, maxPayloadBytes);
     }
     addEdge(fromReference, typeInput, toReference) {
         let fromId = this.resolveNodeId(parseNodeId(fromReference));
@@ -1384,6 +1477,40 @@ function rowToSuggestion(row) {
         reviewedAt: row.reviewed_at === null || row.reviewed_at === undefined ? null : String(row.reviewed_at)
     };
 }
+function boundedNodeReceipt(node) {
+    return boundedKnowledgeNode(node, {
+        lineLimit: NODE_RECEIPT_LINE_LIMIT,
+        charLimit: NODE_RECEIPT_CHAR_LIMIT,
+        aliasLimit: SUMMARY_ALIAS_LIMIT
+    });
+}
+function boundedCreateNodeResult(result) {
+    return {
+        ...result,
+        node: result.node ? boundedNodeReceipt(result.node) : undefined,
+        canonical: result.canonical ? boundedNodeReceipt(result.canonical) : undefined
+    };
+}
+function boundedMergeNodesResult(result) {
+    return {
+        ...result,
+        source: boundedNodeReceipt(result.source),
+        canonical: boundedNodeReceipt(result.canonical)
+    };
+}
+function boundedKnowledgeNode(node, options = {}) {
+    const aliasLimit = boundedInteger(options.aliasLimit, NODE_READ_ALIAS_LIMIT, 1, 100);
+    const aliases = node.aliases.slice(0, aliasLimit);
+    const window = contentWindow(node.content, options);
+    return {
+        ...node,
+        aliases,
+        aliasCount: node.aliases.length,
+        aliasesTruncated: node.aliases.length > aliases.length,
+        content: window.content,
+        contentWindow: window.metadata
+    };
+}
 function summarizeNode(node) {
     const plain = node.content.replace(/```[\s\S]*?```/g, " ").replace(/[#*_>`\[\]()]/g, " ").replace(/\s+/g, " ").trim();
     const aliases = node.aliases.slice(0, SUMMARY_ALIAS_LIMIT);
@@ -1400,6 +1527,251 @@ function summarizeNode(node) {
         ageDays: node.ageDays,
         excerpt: plain.length > 180 ? `${plain.slice(0, 177)}...` : plain
     };
+}
+function contentWindow(content, options) {
+    const lineLimit = boundedInteger(options.lineLimit, NODE_READ_DEFAULT_LINE_LIMIT, 1, NODE_READ_MAX_LINE_LIMIT);
+    const charLimit = boundedInteger(options.charLimit, NODE_READ_DEFAULT_CHAR_LIMIT, 256, NODE_READ_MAX_CHAR_LIMIT);
+    const lineStarts = contentLineStarts(content);
+    const totalLines = content.length === 0 ? 0 : lineStarts.length;
+    let offset = 0;
+    if (options.contentOffset !== undefined) {
+        offset = boundedInteger(options.contentOffset, 0, 0, content.length);
+    }
+    else if (options.startLine !== undefined) {
+        const startLine = boundedInteger(options.startLine, 1, 1, Math.max(1, totalLines));
+        if (totalLines === 0 && startLine !== 1)
+            throw new Error("startLine exceeds the empty node content");
+        offset = totalLines === 0 ? 0 : lineStarts[startLine - 1];
+    }
+    const startLine = totalLines === 0 ? 1 : lineNumberAtOffset(lineStarts, offset, content.length);
+    const lineBoundaryIndex = totalLines === 0 ? 0 : Math.min(totalLines, startLine - 1 + lineLimit);
+    const lineBoundaryOffset = totalLines === 0
+        ? 0
+        : lineBoundaryIndex < totalLines
+            ? lineStarts[lineBoundaryIndex]
+            : content.length;
+    const charBoundaryOffset = Math.min(content.length, offset + charLimit);
+    const endOffset = Math.min(lineBoundaryOffset, charBoundaryOffset);
+    const selected = content.slice(offset, endOffset);
+    const endLine = selected.length === 0
+        ? (totalLines === 0 ? 0 : startLine)
+        : lineNumberAtOffset(lineStarts, Math.max(offset, endOffset - 1), content.length);
+    const hasMore = endOffset < content.length;
+    return {
+        content: selected,
+        metadata: {
+            offset,
+            nextOffset: hasMore ? endOffset : null,
+            startLine,
+            endLine,
+            totalLines,
+            returnedChars: selected.length,
+            totalChars: content.length,
+            lineLimit,
+            charLimit,
+            hasMore,
+            truncatedByLineLimit: lineBoundaryOffset < content.length && lineBoundaryOffset <= charBoundaryOffset,
+            truncatedByCharLimit: charBoundaryOffset < content.length && charBoundaryOffset < lineBoundaryOffset
+        }
+    };
+}
+function contentLineStarts(content) {
+    if (content.length === 0)
+        return [];
+    const starts = [0];
+    for (let index = 0; index < content.length; index += 1) {
+        if (content[index] === "\n" && index + 1 < content.length)
+            starts.push(index + 1);
+    }
+    return starts;
+}
+function lineNumberAtOffset(lineStarts, offset, contentLength) {
+    if (lineStarts.length === 0)
+        return 1;
+    const target = Math.max(0, Math.min(offset, Math.max(0, contentLength - 1)));
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low <= high) {
+        const middle = Math.floor((low + high) / 2);
+        if (lineStarts[middle] <= target)
+            low = middle + 1;
+        else
+            high = middle - 1;
+    }
+    return Math.max(1, high + 1);
+}
+function searchMatchMode(value) {
+    if (value === undefined)
+        return "hybrid";
+    if (["hybrid", "phrase", "all_terms", "any_terms"].includes(value))
+        return value;
+    throw new Error("matchMode must be hybrid, phrase, all_terms, or any_terms");
+}
+function searchMatches(node, query, queryTerms, queryIdentifiers, limit, snippetChars) {
+    const matches = [];
+    const titleTerms = matchedTerms(node.title, query, queryTerms, queryIdentifiers);
+    if (titleTerms.length > 0) {
+        matches.push({
+            field: "title",
+            text: node.title,
+            lineStart: null,
+            lineEnd: null,
+            startOffset: null,
+            endOffset: null,
+            matchedTerms: titleTerms
+        });
+    }
+    const matchingAlias = node.aliases
+        .map((alias) => ({ alias, terms: matchedTerms(alias, query, queryTerms, queryIdentifiers) }))
+        .find((candidate) => candidate.terms.length > 0);
+    if (matchingAlias) {
+        matches.push({
+            field: "alias",
+            text: matchingAlias.alias,
+            lineStart: null,
+            lineEnd: null,
+            startOffset: null,
+            endOffset: null,
+            matchedTerms: matchingAlias.terms
+        });
+    }
+    const needles = uniqueSearchNeedles(query, queryTerms, queryIdentifiers);
+    const occurrences = [];
+    const lowerContent = node.content.toLocaleLowerCase();
+    for (const needle of needles) {
+        const lowerNeedle = needle.toLocaleLowerCase();
+        if (!lowerNeedle)
+            continue;
+        let at = lowerContent.indexOf(lowerNeedle);
+        while (at !== -1 && occurrences.length < 200) {
+            occurrences.push({ start: at, end: at + lowerNeedle.length, term: needle });
+            at = lowerContent.indexOf(lowerNeedle, at + Math.max(1, lowerNeedle.length));
+        }
+    }
+    occurrences.sort((left, right) => left.start - right.start || right.end - left.end);
+    const selected = [];
+    for (const occurrence of occurrences) {
+        if (selected.some((item) => Math.abs(item.start - occurrence.start) < Math.floor(snippetChars * 0.6)))
+            continue;
+        selected.push(occurrence);
+        if (selected.length >= limit)
+            break;
+    }
+    for (const occurrence of selected) {
+        matches.push(contentSearchMatch(node.content, occurrence, needles, snippetChars));
+    }
+    return matches.slice(0, limit + 2);
+}
+function matchedTerms(text, query, queryTerms, queryIdentifiers) {
+    const normalized = normalizeIdentity(text);
+    const textTerms = meaningfulTerms(text);
+    const textIdentifiers = extractIdentifiers(text);
+    const values = [];
+    const normalizedQuery = normalizeIdentity(query);
+    if (normalizedQuery.length >= 2 && normalizedQuery.length <= SEARCH_MAX_MATCH_TERM_CHARS && normalized.includes(normalizedQuery))
+        values.push(query.trim());
+    values.push(...intersection(queryIdentifiers, textIdentifiers));
+    values.push(...intersection(queryTerms, textTerms));
+    return [...new Set(values
+            .filter(Boolean)
+            .map((value) => value.length > SEARCH_MAX_MATCH_TERM_CHARS
+            ? `${value.slice(0, SEARCH_MAX_MATCH_TERM_CHARS - 3)}...`
+            : value))].slice(0, 12);
+}
+function uniqueSearchNeedles(query, queryTerms, queryIdentifiers) {
+    const phrase = query.replace(/\s+/g, " ").trim();
+    return [...new Set([
+            ...(phrase.length >= 3 && phrase.length <= SEARCH_MAX_MATCH_TERM_CHARS ? [phrase] : []),
+            ...queryIdentifiers,
+            ...queryTerms
+        ].filter((value) => value.length >= 2 && value.length <= SEARCH_MAX_MATCH_TERM_CHARS))]
+        .sort((left, right) => right.length - left.length)
+        .slice(0, 24);
+}
+function contentSearchMatch(content, occurrence, needles, snippetChars) {
+    const before = Math.floor(snippetChars * 0.35);
+    let start = Math.max(0, occurrence.start - before);
+    let end = Math.min(content.length, start + snippetChars);
+    if (end - start < snippetChars)
+        start = Math.max(0, end - snippetChars);
+    const previousNewline = content.lastIndexOf("\n", occurrence.start);
+    if (previousNewline >= start)
+        start = previousNewline + 1;
+    const nextNewline = content.indexOf("\n", occurrence.end);
+    if (nextNewline !== -1 && nextNewline + 1 <= end)
+        end = nextNewline + 1;
+    if (end - start > snippetChars)
+        end = start + snippetChars;
+    const lineStarts = contentLineStarts(content);
+    const text = `${start > 0 ? "..." : ""}${content.slice(start, end).trim()}${end < content.length ? "..." : ""}`;
+    const lowerSlice = content.slice(start, end).toLocaleLowerCase();
+    const terms = needles.filter((needle) => lowerSlice.includes(needle.toLocaleLowerCase()));
+    if (!terms.includes(occurrence.term))
+        terms.unshift(occurrence.term);
+    return {
+        field: "content",
+        text,
+        lineStart: lineNumberAtOffset(lineStarts, start, content.length),
+        lineEnd: lineNumberAtOffset(lineStarts, Math.max(start, end - 1), content.length),
+        startOffset: start,
+        endOffset: end,
+        matchedTerms: [...new Set(terms)].slice(0, 12)
+    };
+}
+function fitSearchPage(page, maxPayloadBytes) {
+    const requested = page.results.map((hit) => ({
+        ...hit,
+        node: { ...hit.node, aliases: [...hit.node.aliases] },
+        matches: hit.matches.map((match) => ({ ...match, matchedTerms: [...match.matchedTerms] }))
+    }));
+    page.results = [];
+    for (const requestedHit of requested) {
+        let hit = requestedHit;
+        let accepted = false;
+        while (true) {
+            const candidate = { ...page, results: [...page.results, hit], output: { ...page.output } };
+            refreshSearchPage(candidate);
+            if (Buffer.byteLength(JSON.stringify(candidate), "utf8") <= maxPayloadBytes) {
+                page.results.push(hit);
+                accepted = true;
+                break;
+            }
+            if (hit.matches.length > 1) {
+                hit = { ...hit, matches: hit.matches.slice(0, -1) };
+                continue;
+            }
+            if (hit.node.aliases.length > 2) {
+                hit = {
+                    ...hit,
+                    node: {
+                        ...hit.node,
+                        aliases: hit.node.aliases.slice(0, 2),
+                        aliasesTruncated: true
+                    }
+                };
+                continue;
+            }
+            break;
+        }
+        if (!accepted)
+            break;
+    }
+    refreshSearchPage(page);
+    return page;
+}
+function refreshSearchPage(page) {
+    page.returned = page.results.length;
+    page.hasMore = page.offset + page.returned < page.totalMatches;
+    page.nextOffset = page.hasMore && page.returned > 0 ? page.offset + page.returned : null;
+    page.output.truncatedByBudget = page.returned < Math.min(page.limit, Math.max(0, page.totalMatches - page.offset));
+    page.output.omittedResults = Math.max(0, page.totalMatches - page.offset - page.returned);
+    page.output.serializedBytes = 0;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const serializedBytes = Buffer.byteLength(JSON.stringify(page), "utf8");
+        if (serializedBytes === page.output.serializedBytes)
+            break;
+        page.output.serializedBytes = serializedBytes;
+    }
 }
 function cleanTitle(value) {
     const title = value.replace(/\s+/g, " ").trim();

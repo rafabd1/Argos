@@ -42,6 +42,28 @@ export interface NodeListPage {
   maxPayloadBytes: number;
 }
 
+export interface ContentWindow {
+  offset: number;
+  nextOffset: number | null;
+  startLine: number;
+  endLine: number;
+  totalLines: number;
+  returnedChars: number;
+  totalChars: number;
+  lineLimit: number;
+  charLimit: number;
+  hasMore: boolean;
+  truncatedByLineLimit: boolean;
+  truncatedByCharLimit: boolean;
+}
+
+export interface BoundedKnowledgeNode extends Omit<KnowledgeNode, "aliases"> {
+  aliases: string[];
+  aliasCount: number;
+  aliasesTruncated: boolean;
+  contentWindow: ContentWindow;
+}
+
 export interface KnowledgeEdge {
   id: number;
   publicId: string;
@@ -75,8 +97,40 @@ export interface SearchHit {
   node: NodeSummary;
   score: number;
   matchReasons: string[];
+  matches: SearchMatch[];
   distance: number;
   via?: { fromId: string; edgeType: string };
+}
+
+export type SearchMatchMode = "hybrid" | "phrase" | "all_terms" | "any_terms";
+
+export interface SearchMatch {
+  field: "title" | "alias" | "content";
+  text: string;
+  lineStart: number | null;
+  lineEnd: number | null;
+  startOffset: number | null;
+  endOffset: number | null;
+  matchedTerms: string[];
+}
+
+export interface SearchResultPage {
+  query: string;
+  matchMode: SearchMatchMode;
+  results: SearchHit[];
+  returned: number;
+  totalMatches: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  nextOffset: number | null;
+  depth: number;
+  output: {
+    maxPayloadBytes: number;
+    serializedBytes: number;
+    truncatedByBudget: boolean;
+    omittedResults: number;
+  };
 }
 
 export interface GraphMap {

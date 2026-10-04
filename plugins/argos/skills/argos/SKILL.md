@@ -11,16 +11,26 @@ Argos is the research memory. Build a connected account of the target that makes
 
 Use the workspace root for every Argos call. Initialize it once when `.argos/knowledge.sqlite` is absent.
 
-1. Search for the concrete component, symbol, path, sink, behavior, or hypothesis.
+1. Search for the concrete component, symbol, path, sink, behavior, or hypothesis. Before creating a node, also search the proposed mechanism, attacker input, sink, and impact terms to catch the same item under another name.
 2. Inspect the best canonical node and its bounded map.
 3. Check the node age and any `supersedes`, `supports`, or `refutes` links.
 4. Continue from the strongest open relation or missing proof.
 
 Do not load the whole graph. Expand around the current item, then follow only relations that can change the research decision.
 
-Use `inspect` after search when one node is the likely center. It returns a bounded note preview, local map, coverage gaps, nearby sink paths, and pending suggestions. When `output.nodeContentTruncated` is true, read the complete body with `get_node` instead of widening the whole inspection.
+Direct search hits include bounded title, alias, or body matches. Body matches carry line and character positions. Read these excerpts first; use `get_node` with `startLine` or `contentOffset` only for the surrounding part that can change the decision. Follow `contentWindow.nextOffset` only while more of that selected note is needed.
+
+Use `inspect` after search when one node is the likely center. It returns a bounded note preview, local map, coverage gaps, nearby sink paths, and pending suggestions. When `output.nodeContentTruncated` is true, read a targeted window with `get_node` instead of widening the whole inspection or loading the entire note.
 
 At a useful research pause, inspect the active hypothesis and its terminal sinks or boundaries again. This catches changed premises before the next decision.
+
+## Dedupe Throughout Research
+
+Dedupe is continuous research work, not a one-time creation check. Search again when new evidence changes a mechanism, input, sink, authority boundary, impact, or affected version; before spending substantial time on a branch; before reopening a discarded path; and before treating a hypothesis as a finding.
+
+Run several small searches from different angles instead of one broad query. Use the concrete symbol or path, then the mechanism, attacker-controlled input, sink or side effect, and realistic impact. Compare matching excerpts and nearby relations. A prior node may describe the same behavior under a different title, or may contain only one part of the current chain.
+
+Do not discard a path merely because one search result looks similar. Decide whether the current work is the same item, new evidence for an existing item, a distinct relation between existing items, or a truly independent item. Update and link canonical nodes when the knowledge already belongs to them. Create only what remains distinct after that comparison.
 
 ## Target Knowledge Only
 
@@ -34,7 +44,7 @@ An `artifact` belongs in Argos only when it is target evidence, such as a PoC, t
 
 A node represents one real item. The note body is free-form Markdown.
 
-- Resolve before create.
+- Resolve before create. Use hybrid search for conceptual overlap and phrase or all-term search for exact mechanism, symbol, sink, and impact mentions. Read the returned matches before deciding that the item is distinct. Repeat this check as the hypothesis changes during research.
 - Update the existing node when the same component, sink, test scenario, or hypothesis already exists.
 - Keep the visible node as the current understanding of that item. A changed interpretation, tested version, payload shape, or stronger proof belongs in an update, not a replacement node.
 - Use aliases for symbols, paths, old names, and common labels.

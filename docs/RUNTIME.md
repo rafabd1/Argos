@@ -39,7 +39,7 @@ argos node update --root C:\path\to\target --id N000012 --old-text "Old exact se
 argos node update --root C:\path\to\target --id N000012 --edits-file edits.json
 argos node merge --root C:\path\to\target --source N000021 --into N000012 --content-file consolidated.md
 argos node remove --root C:\path\to\target --id N000021 --reason "Operational log created by mistake"
-argos node get --root C:\path\to\target --id N000012 --relation-limit 200
+argos node get --root C:\path\to\target --id N000012 --start-line 40 --line-limit 60 --char-limit 8192 --relation-limit 50
 argos node list --root C:\path\to\target --type sink --limit 50 --offset 0
 ```
 
@@ -99,8 +99,9 @@ MCP: `argos_resolve_node`, `argos_create_node`, `argos_update_node`,
 `argos_list_nodes` returns a bounded page with at most 20 summaries by default
 and accepts no more than 100. The response reports `hasMore` and `nextOffset`;
 an 8 KiB payload ceiling may end a page earlier. Aliases are shortened in list
-results, so use `argos_get_node` only for the nodes whose full note or identity
-data is needed.
+results. `argos_get_node` returns at most 80 lines and 8 KiB of note content by
+default. Select a line or continue from `contentWindow.nextOffset` only for a
+node whose surrounding text is needed.
 
 ## Relations
 
@@ -124,7 +125,7 @@ MCP: `argos_add_link`, `argos_remove_link`, `argos_suggest_links`,
 ## Search And Recovery
 
 ```powershell
-argos search --root C:\path\to\target --query "signed URL object key" --depth 2 --limit 20
+argos search --root C:\path\to\target --query "signed URL object key" --depth 2 --limit 20 --match-mode hybrid --snippet-limit 2 --snippet-chars 360
 argos inspect --root C:\path\to\target --id N000012 --depth 2 --map-limit 80 --relation-limit 200 --max-hops 5 --chain-limit 10 --max-payload-bytes 24576
 argos map --root C:\path\to\target --id N000012 --depth 3 --limit 80
 argos chains --root C:\path\to\target --from N000012 --max-hops 5 --limit 20
@@ -132,11 +133,14 @@ argos gaps --root C:\path\to\target --id N000012 --age-days 90
 argos stale --root C:\path\to\target --age-days 90 --limit 100
 ```
 
-Search prioritizes exact names, aliases, rare symbols, and query coverage, then
-returns structural expansion with reasons and distance. `inspect` is the usual
-next call for a likely center. It returns a bounded note preview and records
-omissions in `output`; use `node get` for the full body when
-`output.nodeContentTruncated` is true. `map` is useful when the
+Search reads the complete canonical title, aliases, identifiers, and Markdown
+body, but returns only bounded matching excerpts with line and character
+positions. `hybrid` combines textual correspondence with graph expansion;
+`phrase`, `all_terms`, and `any_terms` provide stricter mention checks for
+dedupe. Search results are paged and carry a serialized byte budget. `inspect`
+is the usual next call for a likely center. It returns a bounded note preview
+and records omissions in `output`; use `node get` for a targeted content window
+when `output.nodeContentTruncated` is true. `map` is useful when the
 caller needs a wider neighborhood, while `chains` focuses on paths that reach
 another sink through directed causal technical relations. Authority and
 execution identity remain context and cannot bridge a chain. Inspection returns those

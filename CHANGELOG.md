@@ -2,6 +2,25 @@
 
 All notable changes to Argos are documented here.
 
+## [0.1.9] - 2026-10-03
+
+### Added
+
+- Search results now include bounded matching excerpts with line and character positions for direct title, alias, and note-body matches.
+- Search supports hybrid, phrase, all-term, and any-term correspondence, result pagination, snippet controls, and a serialized output budget.
+- Node reads support bounded line and character windows with continuation cursors.
+
+### Changed
+
+- Identity resolution includes matching excerpts so agents can compare likely duplicates before creating a node.
+- Agent guidance treats dedupe as a continuous research step when evidence, framing, impact, or affected versions change.
+- Node creation, update, and merge responses return bounded receipts instead of echoing unlimited note bodies.
+
+### Fixed
+
+- Full note content can no longer enter model context through an unbounded MCP node read.
+- MCP responses have a final size guard for unexpected oversized output.
+
 ## [0.1.8] - 2026-09-22
 
 ### Changed
