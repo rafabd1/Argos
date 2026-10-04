@@ -69,7 +69,14 @@ Text retrieval ranks exact titles and aliases first, then weighs query coverage,
 rare code and path identifiers, and SQLite FTS5 order. Common terms contribute
 less than symbols that occur in few notes. Argos can then expand the strongest
 seeds through nearby graph relations with a distance penalty. Results include
-match reasons, distance, timestamps, and age.
+match reasons, bounded matching excerpts, line and character positions,
+distance, timestamps, and age. Search pages have a serialized byte budget and
+an offset for continuation.
+
+Canonical note reads return a bounded line and character window. The caller can
+select a line reported by search or continue from the returned character cursor.
+Create, update, and merge operations return a short receipt rather than the
+whole note body.
 
 `inspect` is the compact recovery operation. It returns:
 
@@ -215,7 +222,9 @@ external custom vault path remains absolute. No database migration is needed.
 
 The CLI and MCP server call the same TypeScript domain methods. MCP schemas
 reject unknown top-level fields. Tool responses include structured JSON and a
-text copy for hosts that do not consume structured content.
+text copy for hosts that do not consume structured content. The MCP transport
+also applies a final size guard to responses that do not have a smaller
+operation-specific budget.
 
 Plugin packages expose the same skills and MCP runtime to Codex and Claude Code.
 OpenCode project support installs local skills, instructions, `/argos`, and MCP

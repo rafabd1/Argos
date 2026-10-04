@@ -78,7 +78,12 @@ async function main() {
         print(withDb(root, (db) => db.search(requiredValue(query, "search query"), {
             type: option(parsed, "type"),
             limit: numberOption(parsed, "limit"),
-            depth: numberOption(parsed, "depth")
+            offset: numberOption(parsed, "offset"),
+            depth: numberOption(parsed, "depth"),
+            matchMode: option(parsed, "match-mode"),
+            snippetLimit: numberOption(parsed, "snippet-limit"),
+            snippetChars: numberOption(parsed, "snippet-chars"),
+            maxPayloadBytes: numberOption(parsed, "max-payload-bytes")
         })));
         return;
     }
@@ -158,14 +163,14 @@ async function main() {
 }
 async function handleNode(root, subcommand, rest, parsed) {
     if (subcommand === "create") {
-        const result = withDb(root, (db) => db.createNode({
+        const result = withDb(root, (db) => (0, db_1.boundedCreateNodeResult)(db.createNode({
             type: requiredOption(parsed, "type"),
             title: requiredOption(parsed, "title"),
             content: readContent(parsed) ?? "",
             aliases: listOption(parsed, "aliases"),
             distinctFrom: listOption(parsed, "distinct-from"),
             initialRelation: readInitialRelation(parsed)
-        }));
+        })));
         print(result);
         if (result.resolutionRequired)
             node_process_1.default.exitCode = 2;
@@ -177,13 +182,13 @@ async function handleNode(root, subcommand, rest, parsed) {
         if (modeValue && modeValue !== "replace" && modeValue !== "append")
             throw new Error("--mode must be replace or append");
         const edits = readEdits(parsed);
-        print(withDb(root, (db) => db.updateNode(requiredValue(id, "node id"), {
+        print(withDb(root, (db) => (0, db_1.boundedNodeReceipt)(db.updateNode(requiredValue(id, "node id"), {
             title: option(parsed, "title"),
             content: readContent(parsed),
             aliases: parsed.options.has("aliases") ? listOption(parsed, "aliases") : undefined,
             mode: modeValue,
             edits
-        })));
+        }))));
         return;
     }
     if (subcommand === "remove") {
@@ -195,18 +200,24 @@ async function handleNode(root, subcommand, rest, parsed) {
         const content = readContent(parsed);
         if (content === undefined)
             throw new Error("Node merge requires --content or --content-file with the reviewed consolidated note");
-        print(withDb(root, (db) => db.mergeNodes({
+        print(withDb(root, (db) => (0, db_1.boundedMergeNodesResult)(db.mergeNodes({
             source: requiredOption(parsed, "source"),
             into: requiredOption(parsed, "into"),
             content,
             title: option(parsed, "title"),
             aliases: listOption(parsed, "aliases")
-        })));
+        }))));
         return;
     }
     if (subcommand === "get") {
         const id = referenceValue(option(parsed, "id"), rest[0], "node id");
-        print(withDb(root, (db) => db.getContext(requiredValue(id, "node id"), numberOption(parsed, "relation-limit") ?? 200)));
+        print(withDb(root, (db) => db.readContext(requiredValue(id, "node id"), {
+            relationLimit: numberOption(parsed, "relation-limit"),
+            startLine: numberOption(parsed, "start-line"),
+            contentOffset: numberOption(parsed, "content-offset"),
+            lineLimit: numberOption(parsed, "line-limit"),
+            charLimit: numberOption(parsed, "char-limit")
+        })));
         return;
     }
     if (subcommand === "list") {
@@ -357,7 +368,7 @@ function allowedOptions(command, subcommand, rest) {
         if (subcommand === "merge")
             return ["source", "into", "title", "content", "content-file", "aliases"];
         if (subcommand === "get")
-            return ["id", "relation-limit"];
+            return ["id", "relation-limit", "start-line", "content-offset", "line-limit", "char-limit"];
         if (subcommand === "list")
             return ["type", "limit", "offset"];
         if (subcommand === "resolve")
@@ -378,7 +389,7 @@ function allowedOptions(command, subcommand, rest) {
             return ["id"];
     }
     if (command === "search")
-        return ["query", "type", "limit", "depth"];
+        return ["query", "type", "limit", "offset", "depth", "match-mode", "snippet-limit", "snippet-chars", "max-payload-bytes"];
     if (command === "inspect")
         return ["id", "depth", "map-limit", "relation-limit", "max-hops", "chain-limit", "max-payload-bytes"];
     if (command === "map")
@@ -514,7 +525,8 @@ Usage:
   argos node remove --id <N...> --reason <reason>
   argos node merge --source <N...> --into <N...> --content-file <reviewed-markdown>
                    [--title <title>] [--aliases <a,b>]
-  argos node get --id <N...> [--relation-limit <n>]
+  argos node get --id <N...> [--start-line <n> | --content-offset <n>]
+                 [--line-limit <n>] [--char-limit <n>] [--relation-limit <n>]
   argos node list [--type <type>] [--limit <n>] [--offset <n>]
   argos node resolve --type <type> --title <title> [--aliases <a,b>] [--content <markdown> | --content-file <path|->]
 
@@ -525,7 +537,10 @@ Usage:
   argos link accept --id <L...> --type <relation>
   argos link reject --id <L...>
 
-  argos search <query> [--type <type>] [--depth <0-3>] [--limit <n>]
+  argos search <query> [--type <type>] [--depth <0-3>] [--limit <n>] [--offset <n>]
+               [--match-mode hybrid|phrase|all_terms|any_terms]
+               [--snippet-limit <1-5>] [--snippet-chars <120-1000>]
+               [--max-payload-bytes <8192-65536>]
   argos inspect <N...> [--depth <0-5>] [--map-limit <n>] [--relation-limit <n>] [--max-hops <1-7>] [--chain-limit <n>] [--max-payload-bytes <8192-131072>]
   argos map <N...> [--depth <0-5>] [--limit <n>]
   argos chains --from <N...> [--max-hops <1-7>] [--limit <n>]

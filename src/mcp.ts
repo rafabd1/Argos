@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import process from "node:process";
-import { ArgosDb, initializeArgos } from "./db";
+import {
+  ArgosDb,
+  boundedCreateNodeResult,
+  boundedMergeNodesResult,
+  boundedNodeReceipt,
+  initializeArgos
+} from "./db";
 import { exportObsidian } from "./obsidian";
 import {
   disableObsidianSync,
@@ -38,6 +44,7 @@ const NODE_LIST_DEFAULT_LIMIT = 20;
 const NODE_LIST_MAX_LIMIT = 100;
 const NODE_LIST_MAX_PAYLOAD_BYTES = 8 * 1024;
 const NODE_LIST_ALIAS_LIMIT = 5;
+const MCP_TOOL_RESULT_MAX_PAYLOAD_BYTES = 128 * 1024;
 
 const tools: ToolDefinition[] = [
   {
@@ -92,14 +99,14 @@ const tools: ToolDefinition[] = [
       distinctFrom: stringArrayProp("Candidate node IDs checked and confirmed to represent independently existing current items."),
       initialRelation: initialRelationProp()
     }, ["root", "type", "title"]),
-    handler: ({ root, type, title, content, aliases, distinctFrom, initialRelation }) => withDb(rootValue(root), (db) => db.createNode({
+    handler: ({ root, type, title, content, aliases, distinctFrom, initialRelation }) => withDb(rootValue(root), (db) => boundedCreateNodeResult(db.createNode({
       type: stringValue(type),
       title: stringValue(title),
       content: maybeString(content),
       aliases: stringArray(aliases),
       distinctFrom: stringArray(distinctFrom),
       initialRelation: initialRelationValue(initialRelation)
-    }))
+    })))
   },
   {
     name: "argos_update_node",
@@ -114,13 +121,13 @@ const tools: ToolDefinition[] = [
       mode: enumProp(["replace", "append"], "Replace or append content."),
       edits: nodeTextEditsProp("Ordered exact text edits. Each oldText must match exactly once when its edit is applied; newText may be empty.")
     }, ["root", "id"]),
-    handler: ({ root, id, title, content, aliases, mode, edits }) => withDb(rootValue(root), (db) => db.updateNode(stringValue(id), {
+    handler: ({ root, id, title, content, aliases, mode, edits }) => withDb(rootValue(root), (db) => boundedNodeReceipt(db.updateNode(stringValue(id), {
       title: maybeString(title),
       content: maybeString(content),
       aliases: aliases === undefined ? undefined : stringArray(aliases),
       mode: mode === undefined ? undefined : enumValue(mode, ["replace", "append"]),
       edits: edits === undefined ? undefined : nodeTextEdits(edits)
-    }))
+    })))
   },
   {
     name: "argos_remove_node",
@@ -145,29 +152,39 @@ const tools: ToolDefinition[] = [
       title: optionalStringProp("Optional replacement canonical title."),
       aliases: stringArrayProp("Additional reviewed aliases.")
     }, ["root", "sourceId", "intoId", "content"]),
-    handler: ({ root, sourceId, intoId, content, title, aliases }) => withDb(rootValue(root), (db) => db.mergeNodes({
+    handler: ({ root, sourceId, intoId, content, title, aliases }) => withDb(rootValue(root), (db) => boundedMergeNodesResult(db.mergeNodes({
       source: stringValue(sourceId),
       into: stringValue(intoId),
       content: stringValue(content),
       title: maybeString(title),
       aliases: stringArray(aliases)
-    }))
+    })))
   },
   {
     name: "argos_get_node",
     title: "Read Canonical Node",
-    description: "Read a complete current note, its age, incoming and outgoing relations, and superseding nodes.",
+    description: "Read a bounded window of one current canonical note with line and character cursors, age, and bounded relations. Follow contentWindow.nextOffset only when more of this selected note is needed.",
     inputSchema: schema({
       root: rootProperty,
       id: stringProp("Node ID."),
-      relationLimit: integerProp("Maximum incoming and outgoing relations returned per direction.", 1, 1000)
+      relationLimit: integerProp("Maximum incoming and outgoing relations returned per direction. Defaults to 50.", 1, 100),
+      startLine: integerProp("Optional one-based line at which to start. Do not combine with contentOffset.", 1, 1_000_000),
+      contentOffset: integerProp("Optional zero-based character cursor from a prior contentWindow.nextOffset. Do not combine with startLine.", 0, 100_000_000),
+      lineLimit: integerProp("Maximum lines returned. Defaults to 80.", 1, 500),
+      charLimit: integerProp("Maximum note characters returned. Defaults to 8192 and cannot exceed 32768.", 256, 32_768)
     }, ["root", "id"]),
-    handler: ({ root, id, relationLimit }) => withDb(rootValue(root), (db) => db.getContext(stringValue(id), optionalNumber(relationLimit) ?? 200))
+    handler: ({ root, id, relationLimit, startLine, contentOffset, lineLimit, charLimit }) => withDb(rootValue(root), (db) => db.readContext(stringValue(id), {
+      relationLimit: optionalNumber(relationLimit),
+      startLine: optionalNumber(startLine),
+      contentOffset: optionalNumber(contentOffset),
+      lineLimit: optionalNumber(lineLimit),
+      charLimit: optionalNumber(charLimit)
+    }))
   },
   {
     name: "argos_list_nodes",
     title: "List Argos Nodes",
-    description: "List compact canonical notes, newest first, in an output-bounded page. Follow nextOffset while hasMore is true; use argos_get_node for a complete note.",
+    description: "List compact canonical notes, newest first, in an output-bounded page. Follow nextOffset while hasMore is true; use argos_get_node only for selected bounded note windows.",
     inputSchema: schema({
       root: rootProperty,
       type: optionalStringProp("Optional node type."),
@@ -184,7 +201,7 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_inspect_node",
     title: "Inspect Node And Its Research Context",
-    description: "Return a payload-bounded preview of one canonical note with its graph, coverage gaps, causal technical sink paths, separate context relations, and pending untyped relation candidates. Use argos_get_node for the complete note when output.nodeContentTruncated is true.",
+    description: "Return a payload-bounded preview of one canonical note with its graph, coverage gaps, causal technical sink paths, separate context relations, and pending untyped relation candidates. Use argos_get_node for a targeted content window when output.nodeContentTruncated is true.",
     inputSchema: schema({
       root: rootProperty,
       id: stringProp("Canonical node ID."),
@@ -249,18 +266,28 @@ const tools: ToolDefinition[] = [
   {
     name: "argos_search",
     title: "Search Argos Knowledge",
-    description: "Search free-form notes by text, aliases, and code identifiers, then expand through nearby graph relations. Results include note age and match reasons.",
+    description: "Search complete canonical note bodies, titles, aliases, and code identifiers, then expand through nearby graph relations. Direct matches include bounded excerpts with line and character positions for targeted follow-up and dedupe.",
     inputSchema: schema({
       root: rootProperty,
       query: stringProp("Natural-language query, symbol, path, or concept."),
       type: optionalStringProp("Optional node type filter."),
       depth: integerProp("Graph expansion depth after textual retrieval.", 0, 3),
-      limit: integerProp("Maximum results.", 1, 100)
+      limit: integerProp("Maximum results in this page.", 1, 100),
+      offset: integerProp("Ranked result offset for pagination.", 0, 1_000_000),
+      matchMode: enumProp(["hybrid", "phrase", "all_terms", "any_terms"], "Hybrid ranking, exact normalized phrase, all query terms, or any query term."),
+      snippetLimit: integerProp("Maximum matching content excerpts per direct result. Defaults to 2.", 1, 5),
+      snippetChars: integerProp("Maximum characters per matching excerpt. Defaults to 360.", 120, 1_000),
+      maxPayloadBytes: integerProp("Maximum serialized search response. Defaults to 24576 bytes.", 8_192, 65_536)
     }, ["root", "query"]),
-    handler: ({ root, query, type, depth, limit }) => withDb(rootValue(root), (db) => db.search(stringValue(query), {
+    handler: ({ root, query, type, depth, limit, offset, matchMode, snippetLimit, snippetChars, maxPayloadBytes }) => withDb(rootValue(root), (db) => db.search(stringValue(query), {
       type: maybeString(type),
       depth: optionalNumber(depth),
-      limit: optionalNumber(limit)
+      limit: optionalNumber(limit),
+      offset: optionalNumber(offset),
+      matchMode: matchMode === undefined ? undefined : enumValue(matchMode, ["hybrid", "phrase", "all_terms", "any_terms"]),
+      snippetLimit: optionalNumber(snippetLimit),
+      snippetChars: optionalNumber(snippetChars),
+      maxPayloadBytes: optionalNumber(maxPayloadBytes)
     }))
   },
   {
@@ -405,7 +432,7 @@ async function handleLine(line: string): Promise<void> {
       const args = isObject(params.arguments) ? params.arguments : {};
       validateToolArguments(args, definition.inputSchema);
       const result = await definition.handler(args);
-      writeResponse(request.id, toolResult(result));
+      writeResponse(request.id, toolResult(name, result));
       return;
     }
     writeResponse(request.id, undefined, { code: -32601, message: `Method not found: ${request.method}` });
@@ -442,10 +469,26 @@ function statusWithSync(root: string): unknown {
   return { ...result, obsidianSync: readObsidianSyncStatus(root) };
 }
 
-function toolResult(value: unknown): JsonObject {
+function toolResult(toolName: string, value: unknown): JsonObject {
+  const serialized = JSON.stringify(value);
+  const serializedBytes = Buffer.byteLength(serialized, "utf8");
+  if (serializedBytes > MCP_TOOL_RESULT_MAX_PAYLOAD_BYTES) {
+    const bounded = {
+      ok: true,
+      outputTruncated: true,
+      tool: toolName,
+      serializedBytes,
+      maxPayloadBytes: MCP_TOOL_RESULT_MAX_PAYLOAD_BYTES,
+      message: "The operation completed, but its response exceeded the MCP safety limit. Retry with a lower limit or depth, or use search and a targeted node content window."
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(bounded) }],
+      structuredContent: bounded
+    };
+  }
   const structuredContent = isObject(value) ? value : { result: value };
   return {
-    content: [{ type: "text", text: JSON.stringify(value) }],
+    content: [{ type: "text", text: serialized }],
     structuredContent
   };
 }

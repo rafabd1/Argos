@@ -50,6 +50,13 @@ try {
   }
   const createTool = listed.tools.find((tool) => tool.name === "argos_create_node");
   assert.equal(createTool.inputSchema.properties.initialRelation.additionalProperties, false);
+  const getNodeTool = listed.tools.find((tool) => tool.name === "argos_get_node");
+  assert(getNodeTool.inputSchema.properties.startLine);
+  assert(getNodeTool.inputSchema.properties.contentOffset);
+  assert(getNodeTool.inputSchema.properties.charLimit.maximum === 32768);
+  const searchTool = listed.tools.find((tool) => tool.name === "argos_search");
+  assert(searchTool.inputSchema.properties.matchMode.enum.includes("phrase"));
+  assert(searchTool.inputSchema.properties.maxPayloadBytes.maximum === 65536);
 
   const init = await call("argos_init", { root: target, name: "MCP target" });
   assert.equal(init.structuredContent.initialized, true);
@@ -178,7 +185,47 @@ try {
   assert.equal(inspection.structuredContent.chainMode, "directed_technical");
   assert.deepEqual(inspection.structuredContent.chains, inspection.structuredContent.technicalChains);
   const search = await call("argos_search", { root: target, query: "target object", depth: 1, limit: 10 });
-  assert(search.structuredContent.result.some((hit) => hit.node.publicId === sinkId));
+  assert(search.structuredContent.results.some((hit) => hit.node.publicId === sinkId));
+  const sinkSearchHit = search.structuredContent.results.find((hit) => hit.node.publicId === sinkId);
+  assert(sinkSearchHit.matches.some((match) => match.field === "content" && match.text.includes("target object")));
+  assert(Buffer.byteLength(search.content[0].text, "utf8") <= search.structuredContent.output.maxPayloadBytes);
+
+  const largeContent = `Opening line.\n${"bounded note material ".repeat(900)}\nterminal-match-sentinel closes the note.`;
+  const largeNode = await call("argos_create_node", {
+    root: target,
+    type: "note",
+    title: "Large bounded MCP note",
+    content: largeContent,
+    aliases: [],
+    distinctFrom: [],
+    initialRelation: { nodeId: targetId, type: "contains", direction: "incoming" }
+  });
+  const largeNodeId = largeNode.structuredContent.node.publicId;
+  assert(largeNode.structuredContent.node.content.length <= 2 * 1024);
+  assert.equal(largeNode.structuredContent.node.contentWindow.hasMore, true);
+  const boundedRead = await call("argos_get_node", { root: target, id: largeNodeId, charLimit: 1024, lineLimit: 10 });
+  assert(boundedRead.structuredContent.node.content.length <= 1024);
+  assert.equal(boundedRead.structuredContent.node.contentWindow.hasMore, true);
+  const mentionSearch = await call("argos_search", {
+    root: target,
+    query: "terminal-match-sentinel",
+    matchMode: "phrase",
+    depth: 0,
+    snippetLimit: 2,
+    snippetChars: 240,
+    maxPayloadBytes: 8192
+  });
+  assert.equal(mentionSearch.structuredContent.results[0].node.publicId, largeNodeId);
+  const mention = mentionSearch.structuredContent.results[0].matches.find((match) => match.field === "content");
+  assert(mention.text.includes("terminal-match-sentinel"));
+  assert(mention.lineStart >= 2);
+  const selectedLine = await call("argos_get_node", { root: target, id: largeNodeId, startLine: mention.lineStart, lineLimit: 2, charLimit: 1024 });
+  assert(selectedLine.structuredContent.node.content.includes("terminal-match-sentinel"));
+  const conflictingCursor = await call("argos_get_node", { root: target, id: largeNodeId, startLine: 1, contentOffset: 0 });
+  assert.equal(conflictingCursor.isError, true);
+  const oversizedQuery = await call("argos_search", { root: target, query: "x".repeat(2001) });
+  assert.equal(oversizedQuery.isError, true);
+  assert(oversizedQuery.structuredContent.error.includes("cannot exceed 2000 characters"));
   for (let index = 0; index < 24; index += 1) {
     await call("argos_create_node", {
       root: target,
@@ -200,6 +247,39 @@ try {
     distinctFrom: [],
     initialRelation: { nodeId: componentId, type: "writes", direction: "incoming" }
   });
+  const boundedSearchPage = await call("argos_search", {
+    root: target,
+    query: "bounded context",
+    matchMode: "phrase",
+    depth: 0,
+    limit: 100,
+    snippetLimit: 5,
+    snippetChars: 1000,
+    maxPayloadBytes: 8192
+  });
+  assert.equal(boundedSearchPage.structuredContent.totalMatches, 24);
+  assert.equal(boundedSearchPage.structuredContent.output.truncatedByBudget, true);
+  assert.equal(boundedSearchPage.structuredContent.hasMore, true);
+  assert(boundedSearchPage.structuredContent.nextOffset > 0);
+  assert(Buffer.byteLength(boundedSearchPage.content[0].text, "utf8") <= 8192);
+  assert.equal(
+    boundedSearchPage.structuredContent.output.serializedBytes,
+    Buffer.byteLength(boundedSearchPage.content[0].text, "utf8")
+  );
+  const nextSearchPage = await call("argos_search", {
+    root: target,
+    query: "bounded context",
+    matchMode: "phrase",
+    depth: 0,
+    limit: 5,
+    offset: boundedSearchPage.structuredContent.nextOffset,
+    maxPayloadBytes: 8192
+  });
+  assert(nextSearchPage.structuredContent.results.length > 0);
+  assert.notEqual(
+    nextSearchPage.structuredContent.results[0].node.publicId,
+    boundedSearchPage.structuredContent.results[0].node.publicId
+  );
   const nodePage = await call("argos_list_nodes", { root: target, type: "sink" });
   assert.equal(nodePage.structuredContent.limit, 20);
   assert(nodePage.structuredContent.returned > 0);

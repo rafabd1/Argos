@@ -26,15 +26,18 @@ argos node update --id <N...> [--title <title>] [--content <markdown> | --conten
 argos node remove --id <N...> --reason <reason>
 argos node merge --source <N...> --into <N...> --content <reviewed-markdown>
                  [--title <title>] [--aliases <a,b>]
-argos node get --id <N...> [--relation-limit <n>]
+argos node get --id <N...> [--start-line <n> | --content-offset <n>]
+               [--line-limit <n>] [--char-limit <n>] [--relation-limit <n>]
 argos node list [--type <type>] [--limit <n>] [--offset <n>]
 ```
 
 MCP: `argos_resolve_node`, `argos_create_node`, `argos_update_node`, `argos_remove_node`, `argos_merge_nodes`, `argos_get_node`, `argos_list_nodes`.
 
 `argos_list_nodes` returns a bounded page. Follow `nextOffset` only while
-`hasMore` is true, then use `argos_get_node` for selected full notes. Do not
-request broad pages to reconstruct the whole graph in model context.
+`hasMore` is true. `argos_get_node` returns a bounded content window, never an
+unlimited note. Select a line or pass `contentWindow.nextOffset` back as
+`contentOffset` only when the next part is relevant. Do not reconstruct the
+whole graph or every note in model context.
 
 Use `--content-file -` to read Markdown from stdin. A create result with `resolutionRequired: true` means the caller must inspect candidates. Exact identity returns `canonical` instead of creating a duplicate.
 The first `target` node is the only relation-free root. Every later insertion
@@ -60,7 +63,10 @@ argos link list [--status pending|accepted|rejected]
 argos link accept --id <L...> --type <relation>
 argos link reject --id <L...>
 
-argos search --query <text> [--type <type>] [--depth <0-3>] [--limit <n>]
+argos search --query <text> [--type <type>] [--depth <0-3>] [--limit <n>] [--offset <n>]
+             [--match-mode hybrid|phrase|all_terms|any_terms]
+             [--snippet-limit <1-5>] [--snippet-chars <120-1000>]
+             [--max-payload-bytes <8192-65536>]
 argos inspect --id <N...> [--depth <0-5>] [--map-limit <n>] [--relation-limit <n>] [--max-hops <1-7>] [--chain-limit <n>] [--max-payload-bytes <8192-131072>]
 argos map --id <N...> [--depth <0-5>] [--limit <n>]
 argos chains --from <N...> [--max-hops <1-7>] [--limit <n>]
@@ -70,7 +76,22 @@ argos stale [--age-days <n>] [--limit <n>]
 
 MCP: `argos_add_link`, `argos_remove_link`, `argos_suggest_links`, `argos_review_link_suggestion`, `argos_search`, `argos_inspect_node`, `argos_map`, `argos_find_chains`, `argos_find_gaps`, `argos_list_old_knowledge`.
 
-`inspect` is the normal recovery call after search. It returns a bounded preview of the canonical note, a local map, objective coverage gaps, directed causal sink paths, separate direct context relations, and pending untyped suggestions. The default serialized budget is 24 KiB. Read `output` for omissions and use `node get` when `output.nodeContentTruncated` is true. `chains` remains a compatibility alias of `technicalChains`. When `map.truncated` is true, follow `frontierNodeIds` with targeted reads; omitted context is never evidence of absence.
+Search uses complete canonical titles, aliases, identifiers, and note bodies. It
+returns bounded matching excerpts with line and character positions rather
+than the unrelated start of a note. `hybrid` combines textual correspondence,
+rare identifiers, full-text rank, and typed graph neighbors. Use `phrase`,
+`all_terms`, or `any_terms` when dedupe needs stricter correspondence. Search
+pages report their byte budget and continuation offset.
+
+For dedupe during research, do not rely on one title lookup. Search the exact
+symbol or path, the mechanism, attacker-controlled input, sink or side effect,
+and realistic impact as separate bounded queries. Repeat the check when new
+evidence changes the branch and before investing deeply, reopening a killed
+path, or promoting a finding. Use the returned excerpts and relations to decide
+whether to update an existing node, add evidence or a relation, or create a
+genuinely distinct node.
+
+`inspect` is the normal recovery call after search. It returns a bounded preview of the canonical note, a local map, objective coverage gaps, directed causal sink paths, separate direct context relations, and pending untyped suggestions. The default serialized budget is 24 KiB. Read `output` for omissions and use a targeted `node get` window when `output.nodeContentTruncated` is true. `chains` remains a compatibility alias of `technicalChains`. When `map.truncated` is true, follow `frontierNodeIds` with targeted reads; omitted context is never evidence of absence.
 
 Link suggestions are similarity candidates, not graph facts. New candidates return `relationType: null`, and `link accept` always requires a concrete relation type. Do not accept a candidate merely because two notes share a version, project name, hash, or high-degree neighbor.
 
@@ -86,7 +107,7 @@ argos obsidian sync disable
 
 MCP: `argos_export_obsidian`, `argos_obsidian_sync`.
 
-The default vault is `.argos/obsidian/<config-name>`. The export writes one note per node, one outgoing wikilink per directed relation, a compact index, and `Argos Explorer.base`. It adds missing high-contrast Graph View groups for the primary research node types without replacing existing groups, custom colors, or other graph settings. Incoming relations remain readable without creating reverse graph edges. Each normal Argos operation refreshes a due projection at the 30-second default interval. `refresh` forces it now. A manual disable persists for that workspace until `enable` turns it back on. Internal vault paths follow the current tool root after a move or copy. Pruning removes only unchanged files listed in the previous Argos export manifest. Retired generated Canvas files are removed only when their recorded hash still matches.
+The default vault is `.argos/obsidian/<config-name>`. The export writes one note per node, one outgoing wikilink per directed relation, a compact index, and `Argos Explorer.base`. It adds missing high-contrast Graph View groups for the primary research node types without replacing existing groups, custom colors, or other graph settings. Incoming relations remain readable without creating reverse graph edges. Each normal Argos operation refreshes a due projection at the 30-second default interval. `refresh` forces it now. A manual disable persists for that workspace until `enable` turns it back on. Internal vault paths follow the current tool root after a move or copy. Pruning removes only unchanged files listed in the previous Argos export manifest. Retired generated Canvas files are removed only when their recorded hash still matches. Search and bounded reads use the canonical database directly, so they remain current even before the next Obsidian projection.
 
 ## OpenCode Host Setup
 
