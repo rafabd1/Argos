@@ -27,6 +27,8 @@ Useful signals include:
 
 Group mutations by the property they test. Retain inputs that produce a new state, edge, coverage feature, or sink behavior. Reduce them, add negative controls, then mutate around the smallest distinguishing feature.
 
+Common encodings, separators, traversal forms, and class-specific payloads are not automatic calibration seeds. Use them only when the target's grammar, normalization order, parser disagreement, earlier feedback, or downstream consumer gives a concrete reason. Derive mutations from those target signals and stop replaying a familiar family when it produces no new semantic result.
+
 Avoid a generic payload dictionary detached from the component. If the target has a mature parser, protocol, or coverage engine, use it rather than replacing it with a weak script.
 
 ## Feed The Map

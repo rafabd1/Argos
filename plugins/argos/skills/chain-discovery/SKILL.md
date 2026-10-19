@@ -27,7 +27,9 @@ Create or accept a relation only after the connection is real. Keep weak ideas a
 
 ## Avoid The First Story
 
-The obvious route is a baseline. Look for a different producer, direct caller, delayed consumer, cross-component conversion, or authority shift that changes the result. Randomness is not the goal; a useful chain has a concrete data or state handoff.
+The first chain suggested by the vulnerability class has no default priority. Do not test a familiar payload, expected component, and direct sink merely as a baseline. Consider that route only after target-specific evidence indicates a real handoff or when it is a necessary control for a stronger chain. High duplicate likelihood and a known first-order effect lower its ROI even when the mechanism is plausible.
+
+Look for a different producer, direct caller, delayed consumer, cross-component conversion, state transition, or authority shift that changes the result. Prefer connections revealed by the target map over generic exploit recipes. Randomness is not the goal; a useful chain has a concrete data or state handoff and explains why this target behaves differently from the common case.
 
 When a candidate works at a limited impact, search mapped neighbors for realistic elevation before closing it. Prefer common default deployments and normal attacker actions. Reject chains that need artificial permissions, weakened limits, or lab-only state.
 
