@@ -2,6 +2,14 @@
 
 All notable changes to Argos are documented here.
 
+## [0.1.10] - 2026-10-19
+
+### Changed
+
+- Research guidance now gives first-association payloads, components, and entry points no default priority; they are tested only when target-specific evidence or a stronger hypothesis requires them.
+- Codebase mapping, chain discovery, and adaptive fuzzing now prioritize unexplained target behavior, implementation depth, cross-component handoffs, and semantic feedback over generic vulnerability playbooks.
+- Research prioritization now weighs duplicate likelihood, proof cost, realistic impact, and chaining potential without banning simple bugs that have concrete evidence.
+
 ## [0.1.9] - 2026-10-03
 
 ### Added

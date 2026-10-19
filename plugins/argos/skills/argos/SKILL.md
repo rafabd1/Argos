@@ -32,6 +32,23 @@ Run several small searches from different angles instead of one broad query. Use
 
 Do not discard a path merely because one search result looks similar. Decide whether the current work is the same item, new evidence for an existing item, a distinct relation between existing items, or a truly independent item. Update and link canonical nodes when the knowledge already belongs to them. Create only what remains distinct after that comparison.
 
+## Avoid First-Association Research
+
+Do not let a vulnerability class choose the research path for you. The first payload commonly associated with a class, the component whose name most obviously suggests that class, and the first public entry point a reviewer would inspect are usually crowded, well tested, and easy to duplicate. They have no default priority. Do not test them merely to establish a baseline, complete coverage, or satisfy a class checklist.
+
+Require a target-specific signal before executing an obvious line. Strong signals include an unexplained producer or consumer, conflicting normalization, a direct caller that skips the normal route, a state or timing transition, a change in authority, native or upstream behavior, a default that changed, or a side effect that can feed another sink. A generic class label, familiar payload family, security-themed component, or desire to rule out the obvious is not such a signal.
+
+An obvious probe is justified only when prior code, graph, version, or runtime evidence points to that exact path, or when it is a necessary negative control for a stronger target-specific hypothesis. Otherwise skip it. Prefer paths with concrete asymmetry, incomplete guarantees, cross-component handoffs, deeper implementation ownership, realistic impact, and room for chaining. Work with high duplicate likelihood, weak target-specific evidence, or a result limited to a known first-order effect should not consume research time.
+
+Before deep work, ask:
+
+- Would a capable reviewer choose this exact path immediately?
+- What fact about this target makes the path different from the common case?
+- Which unproven guarantee, relation, or implementation layer could change the outcome?
+- Is the same data, state, or authority handled elsewhere in a less direct way?
+
+If the answers remain generic, do not run the test. This is a priority rule, not a ban on simple bugs: promote an obvious path when code, graph knowledge, version change, or runtime evidence shows a real target-specific break. Do not replace obviousness with randomness; every non-obvious path still needs a concrete attacker-controlled route, violated guarantee, and plausible impact.
+
 ## Target Knowledge Only
 
 Argos contains durable knowledge about the target. Keep work logs, task lists, campaign journals, issue reports, transcripts, checkpoints, contracts, and agent state outside the graph.

@@ -13,6 +13,8 @@ Record only durable target knowledge in Argos. Keep coverage logs, assignments, 
 
 Start from a concrete request path, sink, state transition, trust boundary, parser, worker, or data object. Search Argos first and open the nearest existing map.
 
+Do not choose a center only because it is the component most commonly associated with a vulnerability class. That surface has no default priority and does not need a baseline review. Inspect it only when existing target evidence points there or when it is required to test a stronger hypothesis. Rank work by unexplained handoffs, disagreeing transformations, conditional guarantees, authority changes, persistent state, alternate consumers, and implementation layers with weak map coverage. A security-themed name is not evidence that the highest-ROI flaw lives there.
+
 Follow the implementation far enough to answer:
 
 - which component owns the behavior;
