@@ -33,8 +33,8 @@ codex plugin marketplace add rafabd1/Argos
 
 Install or enable the `argos` plugin in Codex. Its manifest starts the external
 `argos-mcp` command, so no separate MCP registration is needed after the CLI is
-installed. Use `@argos` as the normal entrypoint so the coordinator can load the
-main skill and select specialist skills when useful.
+installed. Use `@argos` as the normal entrypoint so the coordinator loads the
+Argos operating skill.
 
 Manual MCP fallback:
 
@@ -74,12 +74,14 @@ The installer preserves unrelated strict-JSON settings and adds:
 - an `argos-mcp` local server in `opencode.json`;
 - `.opencode/instructions/argos.md`;
 - `.opencode/commands/argos.md` for `/argos`;
-- the main and specialist skills under `.opencode/skills/`.
+- the `argos` operating skill under `.opencode/skills/`.
 
 Argos skips a commented JSONC config because rewriting it would discard
 comments. Add the same MCP and instruction entries manually in that case.
-Existing managed instruction, command, or skill files are kept unless `--force`
-is explicit.
+The installer updates recognized unchanged Argos assets from earlier releases.
+It preserves customized instruction, command, or skill files unless `--force`
+is explicit. It also removes unchanged specialist skills retired in 0.1.11 and
+reports customized copies for review; use `--force` to remove those copies.
 
 Installing OpenCode project support does not initialize target knowledge. The
 coordinator can run `argos init` at the workspace root when needed.

@@ -1,172 +1,88 @@
 ---
 name: argos
-description: Build, query, and revise an Argos knowledge graph during deep security research. Use when mapping a target, recovering prior knowledge, recording components or sinks, linking evidence, revisiting conclusions, finding blind spots, or exploring chains.
+description: Operate an Argos knowledge graph for offensive security research. Use when initializing, searching, inspecting, updating, linking, merging, repairing, or exporting target knowledge.
 ---
 
 # Argos
 
-Argos is the research memory. Build a connected account of the target that makes the next decision easier.
+Argos stores the current connected knowledge of a target. Use it as a map, not as a campaign log or a substitute for the research method chosen by the user or host agent.
 
-## Start From The Map
+## Use One Workspace Root
 
-Use the workspace root for every Argos call. Initialize it once when `.argos/knowledge.sqlite` is absent.
+Pass the target workspace root to every Argos operation. Initialize once when `.argos/knowledge.sqlite` is absent. Do not create another database inside a repository subdirectory or a per-agent lab.
 
-1. Search for the concrete component, symbol, path, sink, behavior, or hypothesis. Before creating a node, also search the proposed mechanism, attacker input, sink, and impact terms to catch the same item under another name.
-2. Inspect the best canonical node and its bounded map.
-3. Check the node age and any `supersedes`, `supports`, or `refutes` links.
-4. Continue from the strongest open relation or missing proof.
+Before writing:
 
-Do not load the whole graph. Expand around the current item, then follow only relations that can change the research decision.
+1. Search for the concrete item by title, alias, symbol, path, mechanism, and other stable identifiers.
+2. Read the best matching excerpts.
+3. Inspect the likely canonical node and its bounded local map.
+4. Decide whether the new knowledge updates that item, adds a relation, or represents a separate item.
 
-Direct search hits include bounded title, alias, or body matches. Body matches carry line and character positions. Read these excerpts first; use `get_node` with `startLine` or `contentOffset` only for the surrounding part that can change the decision. Follow `contentWindow.nextOffset` only while more of that selected note is needed.
+Do not load the whole graph. Use bounded search, inspection, and content windows around the item being handled.
 
-Use `inspect` after search when one node is the likely center. It returns a bounded note preview, local map, coverage gaps, nearby sink paths, and pending suggestions. When `output.nodeContentTruncated` is true, read a targeted window with `get_node` instead of widening the whole inspection or loading the entire note.
+## Store Target Knowledge Only
 
-At a useful research pause, inspect the active hypothesis and its terminal sinks or boundaries again. This catches changed premises before the next decision.
+Store durable facts about the target, its dependencies, and evidence that changes target knowledge. Keep campaign goals, task lists, progress logs, transcripts, checkpoints, agent messages, tool errors, runtime configuration, and Argos usage notes outside the graph.
 
-## Dedupe Throughout Research
+An `artifact` node must represent target evidence such as a PoC, trace, sample, report, or reproducible output. Do not use artifact nodes as general file records or work logs.
 
-Dedupe is continuous research work, not a one-time creation check. Search again when new evidence changes a mechanism, input, sink, authority boundary, impact, or affected version; before spending substantial time on a branch; before reopening a discarded path; and before treating a hypothesis as a finding.
+## Keep One Canonical Node Per Item
 
-Run several small searches from different angles instead of one broad query. Use the concrete symbol or path, then the mechanism, attacker-controlled input, sink or side effect, and realistic impact. Compare matching excerpts and nearby relations. A prior node may describe the same behavior under a different title, or may contain only one part of the current chain.
+A node represents one item that can change independently. Its body is free-form Markdown.
 
-Do not discard a path merely because one search result looks similar. Decide whether the current work is the same item, new evidence for an existing item, a distinct relation between existing items, or a truly independent item. Update and link canonical nodes when the knowledge already belongs to them. Create only what remains distinct after that comparison.
+- Update an existing node when the same component, sink, boundary, test, hypothesis, or other item already exists.
+- Keep the visible body as the current understanding. Do not create a replacement node to preserve old wording, an old conclusion, or an earlier representation.
+- Use aliases for symbols, paths, former names, and common labels.
+- Create a separate node only when it has an independent identity and a distinct role in the map.
+- Link shared facts instead of copying the same text into several notes.
+- Merge reviewed duplicate nodes with the explicit merge operation and a consolidated current body.
+- Remove nodes that contain only operational material. Do not remove target knowledge merely because its conclusion changed; revise its body and relations.
 
-## Avoid First-Association Research
+Use exact edits for small changes and body replacement when stale text must disappear. Read the affected window first and make the update in one operation. Do not retain prior body versions inside the note.
 
-Do not let a vulnerability class choose the research path for you. The first payload commonly associated with a class, the component whose name most obviously suggests that class, and the first public entry point a reviewer would inspect are usually crowded, well tested, and easy to duplicate. They have no default priority. Do not test them merely to establish a baseline, complete coverage, or satisfy a class checklist.
+## Maintain A Concrete Hierarchy
 
-Require a target-specific signal before executing an obvious line. Strong signals include an unexplained producer or consumer, conflicting normalization, a direct caller that skips the normal route, a state or timing transition, a change in authority, native or upstream behavior, a default that changed, or a side effect that can feed another sink. A generic class label, familiar payload family, security-themed component, or desire to rule out the obvious is not such a signal.
+Every non-target node needs a reviewed initial relation. Creation writes the node and that relation atomically.
 
-An obvious probe is justified only when prior code, graph, version, or runtime evidence points to that exact path, or when it is a necessary negative control for a stronger target-specific hypothesis. Otherwise skip it. Prefer paths with concrete asymmetry, incomplete guarantees, cross-component handoffs, deeper implementation ownership, realistic impact, and room for chaining. Work with high duplicate likelihood, weak target-specific evidence, or a result limited to a known first-order effect should not consume research time.
+- The first `target` node is the only relation-free root.
+- Attach top-level components to the target with `contains`.
+- Attach lower-level components to their real owner.
+- Attach data, state, sinks, boundaries, principals, guarantees, tests, hypotheses, artifacts, evidence, and findings to the specific item they describe.
+- Do not attach detailed nodes only to the target when a concrete owner, flow, tested item, premise, or evidence subject exists.
+- Do not use `related_to` as the initial attachment.
+- Do not invent a generic edge to satisfy creation.
 
-Before deep work, ask:
+If `status` reports isolated nodes, broad root links, generic-only nodes, or high-fanout hubs, run `find_gaps` without an ID. Add the exact relation first, then remove the stale broad relation.
 
-- Would a capable reviewer choose this exact path immediately?
-- What fact about this target makes the path different from the common case?
-- Which unproven guarantee, relation, or implementation layer could change the outcome?
-- Is the same data, state, or authority handled elsewhere in a less direct way?
+Read [references/knowledge-model.md](references/knowledge-model.md) before choosing an unfamiliar node or relation type.
 
-If the answers remain generic, do not run the test. This is a priority rule, not a ban on simple bugs: promote an obvious path when code, graph knowledge, version change, or runtime evidence shows a real target-specific break. Do not replace obviousness with randomness; every non-obvious path still needs a concrete attacker-controlled route, violated guarantee, and plausible impact.
+## Keep Relations Exact
 
-## Target Knowledge Only
+Relations are typed and directed facts. Add a relation only when the recorded knowledge supports that exact connection and direction. Put conditions, version limits, and uncertainty in the node body.
 
-Argos contains durable knowledge about the target. Keep work logs, task lists, campaign journals, issue reports, transcripts, checkpoints, contracts, and agent state outside the graph.
+Suggestions and gap results are review queues, not graph facts. Accept a suggestion only after choosing the relation supported by the target knowledge. Reject loose matches based only on names, versions, or broad similarity.
 
-Never create a node for a goal, stop condition, assignment, progress report, tool error, Argos defect, runtime configuration, agent message, usage note, or coverage ledger that only describes completed work. Put operational notes in ignored workspace or harness files outside `.argos`.
+Link tests and evidence to the precise item and scope they cover. A result for one path does not automatically support or refute adjacent paths. When knowledge changes a prior conclusion, update the canonical note and use `supports`, `refutes`, or `supersedes` only when that relation is exact.
 
-An `artifact` belongs in Argos only when it is target evidence, such as a PoC, trace, sample, report, or reproducible test output that can change a target conclusion. Before creating any node, ask whether it would still help someone understand or test the target after the current run ends. If not, do not store it.
+## Read Bounded Content
 
-## One Item, One Node
+Search results include bounded title, alias, and body matches with line and character positions. Read those excerpts first. Use `get_node` with `startLine` or `contentOffset` for the surrounding section, and follow `contentWindow.nextOffset` only while more of that note is needed.
 
-A node represents one real item. The note body is free-form Markdown.
+Use `inspect` when one node is the center of the task. It returns a bounded note preview, local graph, coverage gaps, sink paths, and pending suggestions. When `output.nodeContentTruncated` is true, read a targeted window instead of widening the whole response.
 
-- Resolve before create. Use hybrid search for conceptual overlap and phrase or all-term search for exact mechanism, symbol, sink, and impact mentions. Read the returned matches before deciding that the item is distinct. Repeat this check as the hypothesis changes during research.
-- Update the existing node when the same component, sink, test scenario, or hypothesis already exists.
-- Keep the visible node as the current understanding of that item. A changed interpretation, tested version, payload shape, or stronger proof belongs in an update, not a replacement node.
-- Use aliases for symbols, paths, old names, and common labels.
-- Create a distinct node only when it has an independent identity, still exists in the current map, and can change separately.
-- Link facts instead of repeating them in several notes.
-- Promote a premise from prose to a node when it can be tested, revised, or reused by another conclusion. Do not create a node for every checklist line.
+Run several small searches when identity is unclear. Compare the returned excerpts and nearby relations before creating another node. A similar result may be the same canonical item, a new fact for it, a missing relation, or a separate item.
 
-Place every new node in the map when you create it. The first `target` is the
-only relation-free root. Put a top-level component under the target with
-`contains`; put a lower-level component under its real owner; and attach data,
-state, sinks, guarantees, tests, hypotheses, evidence, and findings to the
-specific item they describe. Do not attach these items only to the target.
+## Track Age Without Guessing State
 
-Creation requires one reviewed initial relation and commits the node and edge
-together. `related_to` is not accepted for this first attachment. If creation
-rejects a missing or generic relation, resolve or inspect the right existing
-node and retry with the concrete hierarchy, flow, authority, test, premise, or
-evidence relation. Never invent a weak link merely to make the node pass.
-When `status` reports isolated nodes, broad root links, generic-only nodes, or
-high-fanout generic hubs, call `find_gaps`
-without an ID for the actionable node and edge list. Repair each item by adding
-the exact relation first, then remove the stale broad edge.
+Every node reports `updatedAt` and `ageDays`. Age means the note may need review; it does not make the knowledge false or current. When the target, dependency, or relevant condition changes, verify the item and update the same canonical node.
 
-Argos keeps only the latest body of each canonical node. Use ordered exact edits for small corrections or replace the body when stale text must disappear. Never keep a generic umbrella node or create a second node to preserve an old test, name, conclusion, or representation.
-If two existing nodes are later proven to be the same item, inspect both and use the explicit merge operation with a reviewed consolidated body. Do not leave parallel canonical identities or discard one note's evidence.
-If a campaign or runtime record entered the graph by mistake, remove that node explicitly. Do not remove stale or refuted target knowledge merely because its conclusion changed; edit its current note and relations instead.
+## Keep Obsidian In Sync
 
-## Let Relations Change The Work
+Normal Argos operations check whether the Obsidian projection is due and refresh it before returning. The default vault is `.argos/obsidian/<config-name>/`.
 
-The graph matters when it changes what you inspect next. Refresh the local map whenever new evidence changes any of these:
+Use sync status to inspect the schedule, sync refresh to force an export, and sync disable only when automatic projection is not wanted for that workspace. The projection is derived output; use the Argos database and tools as the canonical source.
 
-- a producer or consumer of data;
-- an authority boundary or execution identity;
-- a state transition, order, retry, or lifetime;
-- the scope or provenance of a validation;
-- an assumption used to discard or promote a hypothesis;
-- a sink that can feed another sink.
+## References
 
-When one of these changes, revisit linked hypotheses and tests without waiting for the user to point out the connection.
-
-## Keep Conclusions Narrow
-
-Evidence from one path supports a conclusion about that path and its proven conditions.
-
-- A limit on one producer does not bound every producer.
-- A guard's presence does not prove where its parameters came from or which alternate routes bypass it.
-- A normal-path test does not settle direct callers, retries, stale state, native code, upstream dependencies, or other consumers.
-- A safe result at one stage does not prove safety before or after that stage.
-- A prior discard must be reopened when a linked premise changes.
-
-Record the exact scope in natural prose. Point `tests` to the precise item exercised. Add `supports` or `refutes` only when the observed scope covers that conclusion; a primitive-only test stays linked to the primitive. Use `depends_on` for decisive premises and `supersedes` or `refutes` when new knowledge changes an older conclusion.
-
-When older research becomes relevant again, create or recover only the prior conclusion that affects the current work. Link the new evidence to it explicitly. Do not copy a whole legacy log into the graph or silently treat the old verdict as current.
-
-## Find Missing Combinations
-
-Use relation suggestions and sink paths as prompts for inspection. They do not become facts until checked. Suggestions have no relation type until you choose one from code or evidence. Sink paths follow edge direction and causal technical relations; authority, ownership, evidence, and provenance links remain context and cannot manufacture a chain.
-
-The gap engine reports what the map establishes, such as a test linked to only part of a sink's recorded inputs or a boundary linked to some paths but not others. Treat each result as a question to settle in code or a test, never as proof of a vulnerability or proof that an unlisted path exists.
-
-For a meaningful sink:
-
-- map its inputs, transformations, authority, state, and outputs;
-- inspect other producers of the same data and consumers of its output;
-- ask whether its side effect becomes a useful gadget under another component's authority or timing;
-- query paths to related sinks;
-- review nearby tests and old conclusions;
-- suggest links, then accept with the exact relation type the code or evidence supports. Reject candidates based only on common versions, names, or broad similarity.
-
-The goal is to expose useful combinations, not to manufacture a chain between unrelated behaviors.
-
-## Age And Change
-
-Every node reports `updatedAt` and `ageDays`. Age is a reason to verify, not a status judgment.
-
-Recheck old knowledge when the target version, nearby component, upstream dependency, configuration default, or threat model changed. Update the same node and use `supersedes` only when a separate item or conclusion truly replaced another.
-
-## Obsidian Projection
-
-Argos checks the Obsidian projection after normal workspace operations. When the configured interval elapsed, it updates the vault before the operation returns and safely prunes only unchanged files owned by an earlier export. Use sync status to see when the next projection is due and sync refresh to force one now. Disable it only when the user does not want automatic export for that workspace.
-
-## Useful Knowledge
-
-Keep notes short enough to recover and rich enough to act on. Useful content often includes:
-
-- what the item does and where it lives;
-- concrete inputs, outputs, callers, and side effects;
-- whose authority applies and where it is checked;
-- state or timing that changes behavior;
-- conditions that make a guarantee hold;
-- what was observed, what remains inferred, and what would settle it;
-- the target version or date when that matters.
-
-These are prompts, not a required template. Leave out fields that add no knowledge.
-
-## Research Depth
-
-Follow a promising path through the layer that actually implements it. That may include native code, parsers, protocols, generated code, upstream dependencies, caches, storage formats, workers, or alternate entry points. Use focused fuzzing or a small harness when reading cannot settle behavior.
-
-Do not call a broad area covered because the visible wrapper was read. State what remains outside the tested scope and connect it to the relevant nodes.
-
-Before treating a candidate as finished, search for realistic impact elevation. Check alternate consumers, stronger authority transitions, durable effects, and combinations with other mapped sinks. Keep the strongest impact that works in a common, correctly configured scenario. Artificially weakened limits, trust, permissions, or isolation do not establish impact.
-
-Validate and report findings against an official stable release, not a canary or other prerelease build. A prerelease may suggest a lead, but it cannot stand in for proof on a stable version. Record the exact stable version tested.
-
-## Command Reference
-
-Read [references/commands.md](references/commands.md) for the full CLI and MCP surface. Read [references/knowledge-model.md](references/knowledge-model.md) when choosing node or relation types.
+- Read [references/commands.md](references/commands.md) for the CLI and MCP operations.
+- Read [references/knowledge-model.md](references/knowledge-model.md) for node types, relation types, direction, and graph rules.
