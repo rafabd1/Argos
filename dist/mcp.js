@@ -333,7 +333,7 @@ const tools = [
     {
         name: "argos_opencode_install",
         title: "Install OpenCode Project Support",
-        description: "Install project-local Argos instructions, skills, command, and MCP wiring while preserving unrelated OpenCode configuration.",
+        description: "Install the project-local Argos skill, instructions, command, and MCP wiring while preserving unrelated OpenCode configuration.",
         inputSchema: schema({
             root: rootProperty,
             force: booleanProp("Replace modified Argos-managed instruction, command, and skill files.")

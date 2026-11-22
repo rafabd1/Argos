@@ -2,6 +2,14 @@
 
 All notable changes to Argos are documented here.
 
+## [0.1.11] - 2026-11-22
+
+### Changed
+
+- Argos now ships one operating skill focused on the knowledge model, canonical identity, hierarchy, relations, bounded retrieval, updates, and Obsidian projection.
+- General research, fuzzing, exploit, intelligence, chaining, validation, and report-writing heuristics no longer ship as Argos skills.
+- OpenCode setup installs only the `argos` skill, removes unchanged retired specialist skills, and reports customized retired copies for review.
+
 ## [0.1.10] - 2026-10-19
 
 ### Changed

@@ -83,13 +83,10 @@ rare identifiers, full-text rank, and typed graph neighbors. Use `phrase`,
 `all_terms`, or `any_terms` when dedupe needs stricter correspondence. Search
 pages report their byte budget and continuation offset.
 
-For dedupe during research, do not rely on one title lookup. Search the exact
-symbol or path, the mechanism, attacker-controlled input, sink or side effect,
-and realistic impact as separate bounded queries. Repeat the check when new
-evidence changes the branch and before investing deeply, reopening a killed
-path, or promoting a finding. Use the returned excerpts and relations to decide
-whether to update an existing node, add evidence or a relation, or create a
-genuinely distinct node.
+For identity resolution, do not rely on one title lookup. Search stable symbols,
+paths, mechanisms, inputs, sinks, side effects, and other terms that distinguish
+the item. Use the returned excerpts and relations to decide whether to update an
+existing node, add evidence or a relation, or create a distinct node.
 
 `inspect` is the normal recovery call after search. It returns a bounded preview of the canonical note, a local map, objective coverage gaps, directed causal sink paths, separate direct context relations, and pending untyped suggestions. The default serialized budget is 24 KiB. Read `output` for omissions and use a targeted `node get` window when `output.nodeContentTruncated` is true. `chains` remains a compatibility alias of `technicalChains`. When `map.truncated` is true, follow `frontierNodeIds` with targeted reads; omitted context is never evidence of absence.
 
@@ -120,4 +117,4 @@ argos opencode doctor --root <workspace-root>
 
 MCP: `argos_opencode_install`, `argos_opencode_doctor`.
 
-The installer preserves unrelated `opencode.json` fields and adds project-local Argos instructions, skills, `/argos`, and the `argos-mcp` entry. It skips modified managed files unless `--force` is explicit.
+The installer preserves unrelated `opencode.json` fields and adds the project-local Argos operating skill, instructions, `/argos`, and the `argos-mcp` entry. It updates recognized unchanged Argos assets from earlier releases and preserves customized files unless `--force` is explicit. It removes unchanged specialist skills retired in 0.1.11 and reports customized copies for review.

@@ -21,7 +21,7 @@ const env = {
 
 try {
   const version = run("--version");
-  assert.equal(version.version, "0.1.10");
+  assert.equal(version.version, "0.1.11");
   const initialized = run("init", "--root", target, "--name", "Smoke Target");
   assert.equal(initialized.initialized, true);
   const namedDefaultExport = run("export", "obsidian", "--root", target);
@@ -697,13 +697,23 @@ try {
   assert.equal(JSON.parse(fs.readFileSync(path.join(legacySyncTarget, ".argos", "obsidian-sync.json"), "utf8")).output, ".argos/obsidian");
 
   fs.writeFileSync(path.join(target, "opencode.json"), `${JSON.stringify({ theme: "system" }, null, 2)}\n`);
+  const retiredSkill = path.join(target, ".opencode", "skills", "argos-chain-discovery", "SKILL.md");
+  fs.mkdirSync(path.dirname(retiredSkill), { recursive: true });
+  fs.writeFileSync(retiredSkill, "---\nname: argos-chain-discovery\n---\n\nCustomized legacy skill.\n");
   const openCodeInstall = run("opencode", "install", "--root", target);
   assert(openCodeInstall.created.some((file) => file.endsWith(path.join("commands", "argos.md"))));
   const openCodeConfig = JSON.parse(fs.readFileSync(path.join(target, "opencode.json"), "utf8"));
   assert.equal(openCodeConfig.theme, "system");
   assert.deepEqual(openCodeConfig.mcp.argos.command, ["argos-mcp"]);
   assert(fs.existsSync(path.join(target, ".opencode", "skills", "argos", "references", "commands.md")));
-  assert(fs.existsSync(path.join(target, ".opencode", "skills", "argos-finding-report", "references", "report-template.md")));
+  assert(fs.existsSync(retiredSkill));
+  assert(openCodeInstall.advisories.some((item) => item.includes("Preserved customized retired OpenCode skill")));
+  const doctorWithRetiredSkill = run("opencode", "doctor", "--root", target);
+  assert.equal(doctorWithRetiredSkill.ok, false);
+  assert(doctorWithRetiredSkill.advisories.some((item) => item.includes("Retired OpenCode skill is still installed")));
+  const forcedOpenCodeInstall = run("opencode", "install", "--root", target, "--force");
+  assert(forcedOpenCodeInstall.removed.some((file) => file.endsWith("argos-chain-discovery")));
+  assert.equal(fs.existsSync(retiredSkill), false);
   const openCodeDoctor = run("opencode", "doctor", "--root", target);
   assert.equal(openCodeDoctor.ok, true, JSON.stringify(openCodeDoctor));
 

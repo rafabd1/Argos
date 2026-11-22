@@ -226,6 +226,6 @@ text copy for hosts that do not consume structured content. The MCP transport
 also applies a final size guard to responses that do not have a smaller
 operation-specific budget.
 
-Plugin packages expose the same skills and MCP runtime to Codex and Claude Code.
-OpenCode project support installs local skills, instructions, `/argos`, and MCP
+Plugin packages expose the same operating skill and MCP runtime to Codex and Claude Code.
+OpenCode project support installs the local skill, instructions, `/argos`, and MCP
 wiring so OpenCode can use Argos as the main research interface.

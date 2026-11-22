@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, writeFileAtomic } from "./paths";
@@ -11,6 +12,7 @@ export interface OpenCodeInstallResult {
   configPath: string;
   created: string[];
   updated: string[];
+  removed: string[];
   skipped: string[];
   advisories: string[];
 }
@@ -30,16 +32,40 @@ export interface OpenCodeDoctorResult {
   advisories: string[];
 }
 
-const SKILL_ALIASES = [
-  ["argos", "argos"],
-  ["codebase-mapping", "argos-codebase-mapping"],
-  ["chain-discovery", "argos-chain-discovery"],
-  ["evidence-testing", "argos-evidence-testing"],
-  ["adaptive-fuzzing", "argos-adaptive-fuzzing"],
-  ["exploit-validation", "argos-exploit-validation"],
-  ["external-intel", "argos-external-intel"],
-  ["finding-report", "argos-finding-report"]
-] as const;
+const SKILL_ALIASES = [["argos", "argos"]] as const;
+
+const RETIRED_SKILLS: Record<string, Record<string, string>> = {
+  "argos-adaptive-fuzzing": {
+    "SKILL.md": "ed98f36156c80a7d5249f6266e7cb83e63ceed415509e7632088dd08fa0334c8"
+  },
+  "argos-chain-discovery": {
+    "SKILL.md": "33cff803b6d84fff68f7467011b9fed511a48eaf8681105ce396d98470c82a75"
+  },
+  "argos-codebase-mapping": {
+    "SKILL.md": "283c29dcb0dbb26a764df91b774e840120fe4e142762867fbe810ed72105a258"
+  },
+  "argos-evidence-testing": {
+    "SKILL.md": "a8523b4bdc9990421e5bba177e870b249b6d67a19ed9b47bc9f38b3670d47736"
+  },
+  "argos-exploit-validation": {
+    "SKILL.md": "5c3cb33783bbd2efc245b176a4276963305b7ff3d2390727eb771bf7b7c2d5f9"
+  },
+  "argos-external-intel": {
+    "SKILL.md": "66be3d8dc85e70abf0c03f201376f84bca966d0bbaad21cf900bc56d1bc13d64"
+  },
+  "argos-finding-report": {
+    "SKILL.md": "3d0b27171b4b0d5d2bb46747850aa359548ecc4cb0d9f4e2cd763009ae7fde45",
+    "references/report-template.md": "afaab5e2d047b35bcbb3bcdd549bf3798468b131aa72c1db80518b5ae6812b09"
+  }
+};
+
+const PREVIOUS_MANAGED_HASHES = new Set([
+  "b1097c93ea26377308740f38c8e6f3260f4931f5166de2ef0938dee22e6389f8",
+  "a11edb29747179efb1b160daee7cd168b0578e75b11b8a124ea395d2544a7a8c",
+  "8064d90c24cbaeeecde3aab0d6f8a7671a35c690ac0467fbd0e9dc8b0299f4c2",
+  "174ae718570dc1c56f5305a3bada3dfaa593ec82cb264f51d349d665bc106d16",
+  "1d9ad2b44cd7ae7ea225a8da18d526ca926d553f4d300fd133cc1177176ff933"
+]);
 
 export function installOpenCodeSupport(root: string, force = false): OpenCodeInstallResult {
   const targetRoot = path.resolve(root);
@@ -48,6 +74,7 @@ export function installOpenCodeSupport(root: string, force = false): OpenCodeIns
     configPath: path.join(targetRoot, "opencode.json"),
     created: [],
     updated: [],
+    removed: [],
     skipped: [],
     advisories: []
   };
@@ -55,6 +82,7 @@ export function installOpenCodeSupport(root: string, force = false): OpenCodeIns
   installConfig(targetRoot, result);
   installInstructions(targetRoot, result, force);
   installCommand(targetRoot, result, force);
+  removeRetiredSkills(targetRoot, result, force);
   installSkills(targetRoot, result, force);
   return result;
 }
@@ -74,6 +102,9 @@ export function doctorOpenCodeSupport(root: string): OpenCodeDoctorResult {
   if (parsed.ok && !hasArgosInstructions(parsed.value)) advisories.push("opencode.json does not load the Argos project instructions.");
   for (const [, target] of SKILL_ALIASES) {
     if (!skills.includes(target)) advisories.push(`Missing OpenCode skill: ${target}`);
+  }
+  for (const retired of Object.keys(RETIRED_SKILLS)) {
+    if (skills.includes(retired)) advisories.push(`Retired OpenCode skill is still installed: ${retired}. Run \`argos opencode install --root <path>\` to remove an unchanged managed copy, or remove a customized copy after review.`);
   }
   if (!commands.includes("argos")) advisories.push("Missing OpenCode command: /argos");
   const config = {
@@ -126,7 +157,7 @@ function installConfig(root: string, result: OpenCodeInstallResult): void {
 function installInstructions(root: string, result: OpenCodeInstallResult, force: boolean): void {
   const content = `# Argos OpenCode Runtime
 
-Use the \`argos\` skill for connected security research. Load a specialist \`argos-*\` skill only when its method fits the current work. Use the local \`argos\` MCP server for the shared knowledge graph and use the CLI only when the MCP operation is unavailable.
+Use the \`argos\` skill for the knowledge graph. It defines canonical identity, hierarchy, relations, bounded retrieval, updates, and export. Use the local \`argos\` MCP server for the shared graph and use the CLI only when the MCP operation is unavailable.
 
 Keep every call rooted at the target workspace. Resolve canonical identity before creating a node, inspect a bounded linked map before deep work, and treat relation suggestions and knowledge gaps as leads that require evidence.
 `;
@@ -156,6 +187,33 @@ function installSkills(root: string, result: OpenCodeInstallResult, force: boole
   }
 }
 
+function removeRetiredSkills(root: string, result: OpenCodeInstallResult, force: boolean): void {
+  const skillsRoot = path.join(root, ".opencode", "skills");
+  for (const [name, expected] of Object.entries(RETIRED_SKILLS)) {
+    const dir = path.join(skillsRoot, name);
+    if (!fs.existsSync(dir)) continue;
+    if (!force && !matchesManagedTree(dir, expected)) {
+      result.skipped.push(dir);
+      result.advisories.push(`Preserved customized retired OpenCode skill: ${dir}. Review it, then remove it or rerun with --force.`);
+      continue;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+    result.removed.push(dir);
+  }
+}
+
+function matchesManagedTree(root: string, expected: Record<string, string>): boolean {
+  const files = walkFiles(root).map((file) => path.relative(root, file).replaceAll("\\", "/")).sort();
+  const expectedFiles = Object.keys(expected).sort();
+  if (files.length !== expectedFiles.length || files.some((file, index) => file !== expectedFiles[index])) return false;
+  return files.every((relative) => normalizedHash(path.join(root, relative)) === expected[relative]);
+}
+
+function normalizedHash(file: string): string {
+  const content = fs.readFileSync(file, "utf8").replaceAll("\r\n", "\n").replace(/[\r\n]+$/u, "") + "\n";
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
 function rewriteSkillName(content: string, name: string): string {
   return content.replace(/^(---\r?\n[\s\S]*?\r?\nname:)\s*[^\r\n]+/m, `$1 ${name}`);
 }
@@ -177,7 +235,7 @@ function writeManaged(file: string, content: string, result: OpenCodeInstallResu
       result.skipped.push(file);
       return;
     }
-    if (!force) {
+    if (!force && !PREVIOUS_MANAGED_HASHES.has(normalizedHash(file))) {
       result.skipped.push(file);
       result.advisories.push(`Skipped modified file: ${file}. Use --force to replace managed OpenCode assets.`);
       return;
